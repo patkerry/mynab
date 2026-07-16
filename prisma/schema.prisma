@@ -30,13 +30,14 @@ enum GoalType {
 }
 
 model Account {
-  id           String        @id @default(cuid())
-  name         String
-  type         AccountType
-  onBudget     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  transactions Transaction[]
+  id              String        @id @default(cuid())
+  name            String
+  type            AccountType
+  onBudget        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  transactions    Transaction[]
+  paymentCategory Category? // the linked "pay this card" category, if this is a credit account
 
   @@map("accounts")
 }
@@ -44,6 +45,7 @@ model Account {
 model CategoryGroup {
   id         String     @id @default(cuid())
   name       String
+  isHidden   Boolean    @default(false) // e.g. the singleton "Credit Card Payments" group
   createdAt  DateTime   @default(now())
   categories Category[]
 
@@ -57,6 +59,11 @@ model Category {
   name            String
   goalType        GoalType?
   goalAmountCents Int?
+  // Set only on a card's auto-created payment category. Its monthly activity is DERIVED
+  // (see computeDerived in src/lib/budget.ts) rather than summed from transactions tagged
+  // with this category's own id, the way every other category works.
+  linkedAccountId String?       @unique
+  linkedAccount   Account?      @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   budgetEntries   BudgetEntry[]
