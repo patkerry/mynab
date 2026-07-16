@@ -151,6 +151,68 @@ export async function toggleCleared(id: string) {
   revalidateAll();
 }
 
+// Reconciliation is only permitted once every transaction on the account is cleared — no
+// auto-clearing on our side, and no partial reconciliation. The user has to manually clear
+// (or delete) everything uncleared first; shared by getReconcileInfo (the pre-check that gates
+// opening the modal) and reconcileAccount (which re-checks server-side rather than trusting
+// that nothing changed between opening the modal and saving it).
+async function reconcileEligibility(accountId: string) {
+  const transactions = await prisma.transaction.findMany({ where: { accountId } });
+  const unclearedCount = transactions.filter((t) => !t.cleared).length;
+  return { transactions, unclearedCount };
+}
+
+function unclearedReason(unclearedCount: number): string {
+  return `Clear every transaction before reconciling — ${unclearedCount} transaction${unclearedCount > 1 ? "s are" : " is"} still uncleared.`;
+}
+
+export type ReconcileCheck = { ok: true; currentBalanceCents: number } | { ok: false; reason: string };
+
+export async function getReconcileInfo(accountId: string): Promise<ReconcileCheck> {
+  const { transactions, unclearedCount } = await reconcileEligibility(accountId);
+  if (unclearedCount > 0) return { ok: false, reason: unclearedReason(unclearedCount) };
+  return { ok: true, currentBalanceCents: transactions.reduce((s, t) => s + t.amountCents, 0) };
+}
+
+export type ReconcileResult = { ok: true; adjustmentCents: number } | { ok: false; reason: string };
+
+// Never auto-clears anything and never partially reconciles — if the account isn't fully
+// cleared this just refuses and explains why. Once eligible, the only action taken is a single
+// adjustment transaction (already cleared, since it's dated as of "now" and represents a
+// verified true-up) for whatever difference remains between the tracked and actual balance.
+export async function reconcileAccount(accountId: string, actualBalance: string): Promise<ReconcileResult> {
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) return { ok: false, reason: "Account not found." };
+
+  const { transactions, unclearedCount } = await reconcileEligibility(accountId);
+  if (unclearedCount > 0) return { ok: false, reason: unclearedReason(unclearedCount) };
+
+  const currentBalanceCents = transactions.reduce((s, t) => s + t.amountCents, 0);
+  const diff = parseMoney(actualBalance) - currentBalanceCents;
+
+  if (diff !== 0) {
+    // Matches addAccount's starting-balance convention: a positive adjustment is income unless
+    // the account is a credit card (where a positive difference just means less debt than
+    // tracked, not new income).
+    const isIncome = diff > 0 && account.type !== "CREDIT";
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        date: new Date().toISOString().slice(0, 10),
+        payee: "Reconciliation Adjustment",
+        kind: isIncome ? "INCOME" : "NORMAL",
+        categoryId: null,
+        amountCents: diff,
+        cleared: true,
+        memo: "",
+      },
+    });
+  }
+
+  revalidateAll();
+  return { ok: true, adjustmentCents: diff };
+}
+
 // Ports del (ynab-clone.jsx lines 556-560) — deletes both legs of a transfer together.
 export async function deleteTransaction(id: string) {
   const t = await prisma.transaction.findUnique({ where: { id } });

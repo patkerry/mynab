@@ -10,6 +10,7 @@ export type ModalState =
   | { type: "category"; groupId: string }
   | { type: "goal"; cat: Category }
   | { type: "reset" }
+  | { type: "reconcile"; accountId: string; accountName: string; currentBalanceCents: number }
   | null;
 
 type ModalContextValue = {

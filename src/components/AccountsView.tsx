@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, Trash2 } from "lucide-react";
+import { Plus, X, Check, Trash2, ScrollText } from "lucide-react";
 import { fmt, TXN_GRID } from "@/lib/format";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction } from "@/app/accounts/actions";
+import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo } from "@/app/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
+import { useModal } from "./modal/ModalContext";
+import { useToast } from "./toast/ToastContext";
 import type { Account, Category, Transaction } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
@@ -25,6 +27,8 @@ export function AccountsView({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const { openModal } = useModal();
+  const { showToast } = useToast();
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
   // catName (ynab-clone.jsx line 542), where both cases carried categoryId: null.
@@ -49,6 +53,20 @@ export function AccountsView({
 
   const cleared = transactions.filter((t) => t.cleared).reduce((s, t) => s + t.amountCents, 0);
   const uncleared = transactions.filter((t) => !t.cleared).reduce((s, t) => s + t.amountCents, 0);
+
+  // Never auto-clears and never partially reconciles — getReconcileInfo re-checks (ignoring
+  // the current category filter, since `transactions` above may be a filtered subset) whether
+  // every transaction on the account is cleared, and refuses with a specific reason if not.
+  const handleReconcile = async () => {
+    const account = accounts.find((a) => a.id === accountFilter);
+    if (!account) return;
+    const info = await getReconcileInfo(accountFilter);
+    if (!info.ok) {
+      showToast(info.reason);
+      return;
+    }
+    openModal({ type: "reconcile", accountId: accountFilter, accountName: account.name, currentBalanceCents: info.currentBalanceCents });
+  };
 
   return (
     <div style={{ padding: "18px 26px 40px" }}>
@@ -99,17 +117,24 @@ export function AccountsView({
             </span>
           </div>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => {
-            setAdding(true);
-            setEditingId(null);
-          }}
-          disabled={adding}
-          style={{ opacity: adding ? 0.5 : 1 }}
-        >
-          <Plus size={15} /> Add transaction
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {accountFilter !== "all" && (
+            <button className="btn btn-ghost" onClick={handleReconcile}>
+              <ScrollText size={15} /> Reconcile
+            </button>
+          )}
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setAdding(true);
+              setEditingId(null);
+            }}
+            disabled={adding}
+            style={{ opacity: adding ? 0.5 : 1 }}
+          >
+            <Plus size={15} /> Add transaction
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
