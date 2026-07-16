@@ -4,14 +4,24 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { setGoal, removeGoal } from "@/app/budget/actions";
 import { parseMoney } from "@/lib/format";
+import { useToast } from "../toast/ToastContext";
 import type { Category, GoalType } from "@/generated/prisma/client";
 
 export function GoalModal({ close, cat }: { close: () => void; cat: Category }) {
-  const [type, setType] = useState<GoalType>(cat.goalType || "MONTHLY");
+  // A savings TARGET doesn't make sense on a payment category (its available rises with more
+  // card spending, not with money saved), so only MONTHLY funding is offered for one — see the
+  // matching server-side guard in setGoal.
+  const isPaymentCategory = cat.linkedAccountId != null;
+  const [type, setType] = useState<GoalType>(isPaymentCategory ? "MONTHLY" : cat.goalType || "MONTHLY");
   const [amount, setAmount] = useState(cat.goalAmountCents != null ? (cat.goalAmountCents / 100).toFixed(2) : "");
+  const { showToast } = useToast();
 
   const save = async () => {
-    await setGoal(cat.id, type, parseMoney(amount));
+    const result = await setGoal(cat.id, type, parseMoney(amount));
+    if (!result.ok) {
+      showToast(result.reason);
+      return;
+    }
     close();
   };
   const remove = async () => {
@@ -42,7 +52,13 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
             <button className={type === "MONTHLY" ? "on" : ""} onClick={() => setType("MONTHLY")}>
               Monthly funding
             </button>
-            <button className={type === "TARGET" ? "on" : ""} onClick={() => setType("TARGET")}>
+            <button
+              className={type === "TARGET" ? "on" : ""}
+              onClick={() => !isPaymentCategory && setType("TARGET")}
+              disabled={isPaymentCategory}
+              title={isPaymentCategory ? "Not available for payment categories" : undefined}
+              style={isPaymentCategory ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
+            >
               Savings target
             </button>
           </div>
@@ -52,7 +68,11 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
           <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
         <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
-          {type === "MONTHLY" ? "Progress tracks this month's assigned amount." : "Progress tracks total available in the category."}
+          {isPaymentCategory
+            ? "Payment categories can only use monthly funding — their available balance rises with card spending, so a savings target wouldn't track correctly."
+            : type === "MONTHLY"
+              ? "Progress tracks this month's assigned amount."
+              : "Progress tracks total available in the category."}
         </p>
       </div>
       <div style={{ display: "flex", gap: 10, padding: "0 20px 18px", justifyContent: "space-between" }}>

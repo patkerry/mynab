@@ -60,9 +60,24 @@ export async function addCategory(groupId: string, name: string) {
   revalidateAll();
 }
 
-export async function setGoal(categoryId: string, goalType: GoalType, amountCents: number) {
+export type SetGoalResult = { ok: true } | { ok: false; reason: string };
+
+// A TARGET goal's progress is `available / goalAmount` — for a payment category, available
+// goes UP the more you spend on the card, so a savings target would show "progress" backwards
+// (spend more, get closer to "done"). A MONTHLY goal is fine on a payment category ("always
+// assign at least $X/month toward this card") since it only tracks what was actually assigned.
+// The GoalModal already only offers MONTHLY for payment categories; this is the server-side
+// backstop so it can't be bypassed by calling the action directly.
+export async function setGoal(categoryId: string, goalType: GoalType, amountCents: number): Promise<SetGoalResult> {
+  if (goalType === "TARGET") {
+    const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { linkedAccountId: true } });
+    if (category?.linkedAccountId != null) {
+      return { ok: false, reason: "Payment categories can only use monthly funding goals, not a savings target." };
+    }
+  }
   await prisma.category.update({ where: { id: categoryId }, data: { goalType, goalAmountCents: amountCents } });
   revalidateAll();
+  return { ok: true };
 }
 
 export async function removeGoal(categoryId: string) {
