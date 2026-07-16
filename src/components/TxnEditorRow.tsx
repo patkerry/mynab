@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Check, X } from "lucide-react";
 import { TXN_GRID } from "@/lib/format";
+import { useToast } from "./toast/ToastContext";
 import type { Account, Category } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export function TxnEditorRow({
   const isIncome = categoryId === "income";
   const isTransfer = categoryId.startsWith("transfer:");
 
+  const { showToast } = useToast();
   const rowRef = useRef<HTMLDivElement>(null);
 
   // Clicking anywhere outside the row closes it back to a static row, same as Escape —
@@ -46,6 +48,16 @@ export function TxnEditorRow({
   }, [onClose]);
 
   const submit = async () => {
+    // Checked client-side (in addition to the server-side guard in addTransaction) so the
+    // user gets an immediate, specific reason instead of a generic error border after a
+    // round-trip — the destination account list includes the source account itself, since
+    // "transfer to any other account" doesn't exclude the one currently selected.
+    if (isTransfer && categoryId.slice(9) === accountId) {
+      showToast("Can't transfer an account to itself — pick a different destination account.");
+      setErr(true);
+      setTimeout(() => setErr(false), 1200);
+      return;
+    }
     const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo });
     if (ok) onClose();
     else {

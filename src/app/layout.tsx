@@ -5,6 +5,7 @@ import "./globals.css";
 import { getSidebarData } from "@/lib/queries";
 import { Sidebar } from "@/components/Sidebar";
 import { ModalProvider } from "@/components/modal/ModalContext";
+import { ToastProvider } from "@/components/toast/ToastContext";
 
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"] });
 
@@ -19,14 +20,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className={inter.className}>
       <body>
-        <ModalProvider>
-          <div className="ynab-root">
-            <Suspense fallback={null}>
-              <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} />
-            </Suspense>
-            <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
-          </div>
-        </ModalProvider>
+        <ToastProvider>
+          <ModalProvider>
+            <div className="ynab-root">
+              <Suspense fallback={null}>
+                <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} />
+              </Suspense>
+              <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
+            </div>
+          </ModalProvider>
+        </ToastProvider>
       </body>
     </html>
   );
