@@ -1,4 +1,5 @@
 import { uid, curYM } from "../src/lib/format";
+import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "../src/lib/budget";
 import type { PrismaClient } from "../src/generated/prisma/client";
 
 // Ports seed() from the original single-file app (ynab-clone.jsx lines 48-92) into the
@@ -15,10 +16,16 @@ export function buildSeedData() {
   ];
 
   const groups = [
-    { id: "g1", name: "Immediate Obligations" },
-    { id: "g2", name: "True Expenses" },
-    { id: "g3", name: "Quality of Life" },
+    { id: "g1", name: "Immediate Obligations", isHidden: false },
+    { id: "g2", name: "True Expenses", isHidden: false },
+    { id: "g3", name: "Quality of Life", isHidden: false },
+    // Matches the payment_categories migration's backfill convention (same fixed id/name),
+    // so "Reset demo data" doesn't wipe out the credit-card payment category feature — it
+    // recreates the same singleton hidden group + linked category the migration/addAccount do.
+    { id: PAYMENT_GROUP_ID, name: PAYMENT_GROUP_NAME, isHidden: true },
   ];
+
+  const visaPaymentDraft = buildPaymentCategoryDraft({ id: "a_cc", name: "Visa Credit Card" });
 
   const categories = [
     { id: "c_rent", groupId: "g1", name: "Rent", goalType: "MONTHLY" as const, goalAmountCents: 120000 },
@@ -32,6 +39,7 @@ export function buildSeedData() {
     { id: "c_dine", groupId: "g3", name: "Dining Out", goalType: "MONTHLY" as const, goalAmountCents: 20000 },
     { id: "c_fun", groupId: "g3", name: "Fun Money", goalType: "MONTHLY" as const, goalAmountCents: 10000 },
     { id: "c_vac", groupId: "g3", name: "Vacation", goalType: "TARGET" as const, goalAmountCents: 200000 },
+    { id: "catpay_a_cc", groupId: PAYMENT_GROUP_ID, name: visaPaymentDraft.name, linkedAccountId: visaPaymentDraft.linkedAccountId },
   ];
 
   const transactions = [
