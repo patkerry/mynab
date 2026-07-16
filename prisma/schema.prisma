@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT
+}
+
+enum TransactionKind {
+  NORMAL
+  INCOME
+  TRANSFER
+}
+
+enum GoalType {
+  MONTHLY
+  TARGET
+}
+
+model Account {
+  id           String        @id @default(cuid())
+  name         String
+  type         AccountType
+  onBudget     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+
+  @@map("accounts")
+}
+
+model CategoryGroup {
+  id         String     @id @default(cuid())
+  name       String
+  createdAt  DateTime   @default(now())
+  categories Category[]
+
+  @@map("category_groups")
+}
+
+model Category {
+  id              String        @id @default(cuid())
+  groupId         String
+  group           CategoryGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  name            String
+  goalType        GoalType?
+  goalAmountCents Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  budgetEntries   BudgetEntry[]
+  transactions    Transaction[]
+
+  @@index([groupId])
+  @@map("categories")
+}
+
+model BudgetEntry {
+  id          String   @id @default(cuid())
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  yearMonth   String // "YYYY-MM"
+  amountCents Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([categoryId, yearMonth])
+  @@index([yearMonth])
+  @@map("budget_entries")
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  accountId   String
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  date        String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
+  payee       String
+  memo        String          @default("")
+  kind        TransactionKind @default(NORMAL)
+  categoryId  String?
+  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountCents Int // signed cents; positive = inflow, negative = outflow
+  cleared     Boolean         @default(false)
+  transferId  String? // shared by both legs of a transfer
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([accountId, date])
+  @@index([categoryId, date])
+  @@index([kind])
+  @@index([transferId])
+  @@map("transactions")
+}
