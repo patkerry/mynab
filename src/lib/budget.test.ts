@@ -132,6 +132,56 @@ describe("conservation of total available (invariant 4)", () => {
   });
 });
 
+describe("month-to-month rollover", () => {
+  const M1 = "2026-06";
+  const M2 = "2026-07";
+  const M3 = "2026-08";
+
+  it("unspent assigned money carries forward into a month with no new activity or assignment", () => {
+    const assignM1 = budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: M1, amountCents: 10000 });
+    const spendM1 = txn({ id: "t1", accountId: "a_check", date: `${M1}-15`, kind: "NORMAL", categoryId: "c_groc", amountCents: -6000 });
+    const derived = computeDerived(baseInputs([spendM1], [assignM1]), M2);
+
+    expect(derived.available("c_groc", M1)).toBe(4000); // 10000 assigned - 6000 spent
+    expect(derived.assignedIn("c_groc", M2)).toBe(0); // nothing newly assigned in M2 itself
+    expect(derived.activityIn("c_groc", M2)).toBe(0); // no activity in M2 itself
+    expect(derived.available("c_groc", M2)).toBe(4000); // but available rolls the $40 forward
+  });
+
+  it("overspending carries forward as a negative available, and a later assignment tops it up on top of the deficit", () => {
+    const assignM1 = budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: M1, amountCents: 5000 });
+    const spendM1 = txn({ id: "t1", accountId: "a_check", date: `${M1}-15`, kind: "NORMAL", categoryId: "c_groc", amountCents: -8000 });
+
+    const derivedM1 = computeDerived(baseInputs([spendM1], [assignM1]), M1);
+    expect(derivedM1.available("c_groc", M1)).toBe(-3000); // overspent by $30
+
+    const derivedM2NoNewAssignment = computeDerived(baseInputs([spendM1], [assignM1]), M2);
+    expect(derivedM2NoNewAssignment.available("c_groc", M2)).toBe(-3000); // deficit rolls forward, not reset to 0
+
+    const assignM2 = budgetEntry({ id: "b2", categoryId: "c_groc", yearMonth: M2, amountCents: 5000 });
+    const derivedM2 = computeDerived(baseInputs([spendM1], [assignM1, assignM2]), M2);
+    expect(derivedM2.available("c_groc", M2)).toBe(2000); // -3000 deficit + 5000 new assignment
+  });
+
+  it("rolls forward across more than one empty month in between", () => {
+    const assignM1 = budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: M1, amountCents: 10000 });
+    const spendM1 = txn({ id: "t1", accountId: "a_check", date: `${M1}-15`, kind: "NORMAL", categoryId: "c_groc", amountCents: -4000 });
+    const derived = computeDerived(baseInputs([spendM1], [assignM1]), M3);
+
+    expect(derived.available("c_groc", M3)).toBe(6000); // still $60, two months later, untouched
+  });
+
+  it("a payment category's available rolls forward the same way, and a payment in a later month reduces the rolled-forward balance", () => {
+    const purchaseM1 = txn({ id: "t1", accountId: "a_card", date: `${M1}-10`, kind: "NORMAL", categoryId: "c_groc", amountCents: -5000 });
+    const derivedM2NoPayment = computeDerived(baseInputs([purchaseM1]), M2);
+    expect(derivedM2NoPayment.available("c_pay", M2)).toBe(5000); // still needs $50 to pay it off
+
+    const paymentM2 = txn({ id: "t2", accountId: "a_card", date: `${M2}-10`, kind: "TRANSFER", amountCents: 3000, transferId: "xfer1" });
+    const derivedM2 = computeDerived(baseInputs([purchaseM1, paymentM2]), M2);
+    expect(derivedM2.available("c_pay", M2)).toBe(2000); // $50 rolled forward minus the $30 payment
+  });
+});
+
 describe("retroactive history (documented, intentional — not a bug)", () => {
   it("a payment category backfilled onto a pre-existing card reflects that card's full transaction history, not just activity from after the category existed", () => {
     // The backfill migration creates a payment category for an ALREADY-USED card — this
