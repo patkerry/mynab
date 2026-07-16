@@ -144,11 +144,25 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   return true;
 }
 
-export async function toggleCleared(id: string) {
+export type ToggleClearedResult = { ok: true } | { ok: false; reason: string };
+
+// Every approved (cleared) transaction needs a category — otherwise a credit card purchase
+// (or any spending) can sit there uncategorized indefinitely, never showing up against any
+// budget category, including a card's payment category. Only blocks the uncleared->cleared
+// transition on a plain NORMAL transaction with no category; INCOME and TRANSFER legs are
+// intentionally always categoryId: null and are unaffected (kind !== "NORMAL" short-circuits).
+export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
   const t = await prisma.transaction.findUnique({ where: { id } });
-  if (!t) return;
-  await prisma.transaction.update({ where: { id }, data: { cleared: !t.cleared } });
+  if (!t) return { ok: false, reason: "Transaction not found." };
+
+  const willClear = !t.cleared;
+  if (willClear && t.kind === "NORMAL" && t.categoryId === null) {
+    return { ok: false, reason: "Add a category before marking this transaction cleared." };
+  }
+
+  await prisma.transaction.update({ where: { id }, data: { cleared: willClear } });
   revalidateAll();
+  return { ok: true };
 }
 
 // Reconciliation is only permitted once every transaction on the account is cleared — no

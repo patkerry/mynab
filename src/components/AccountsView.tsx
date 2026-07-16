@@ -224,9 +224,10 @@ export function AccountsView({
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 <button
                   title={t.cleared ? "Cleared" : "Uncleared"}
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    toggleCleared(t.id);
+                    const result = await toggleCleared(t.id);
+                    if (!result.ok) showToast(result.reason);
                   }}
                   style={{ width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center", background: t.cleared ? "var(--pos)" : "var(--line)", color: "#fff" }}
                 >
