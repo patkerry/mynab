@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseMoney, uid, curYM } from "@/lib/format";
+import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "@/lib/budget";
 import type { AccountType } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
@@ -142,6 +143,10 @@ export async function deleteTransaction(id: string) {
 
 // Ports AccountModal's save (ynab-clone.jsx lines 899-912): a positive starting balance
 // becomes income (unless the account is a credit card), a negative or zero balance doesn't.
+// Invariant 1 (DB half): a new on-budget CREDIT account gets exactly one linked payment
+// category in the singleton hidden "Credit Card Payments" group, created/found in the same
+// transaction. The pure "what should it look like" decision lives in buildPaymentCategoryDraft
+// (src/lib/budget.ts, unit-tested); this just persists it.
 export async function addAccount(input: { name: string; type: AccountType; balance: string }) {
   const name = input.name.trim();
   if (!name) return;
@@ -162,6 +167,13 @@ export async function addAccount(input: { name: string; type: AccountType; balan
           memo: "",
         },
       });
+    }
+    if (input.type === "CREDIT") {
+      const hiddenGroup =
+        (await tx.categoryGroup.findFirst({ where: { isHidden: true } })) ??
+        (await tx.categoryGroup.create({ data: { name: PAYMENT_GROUP_NAME, isHidden: true } }));
+      const draft = buildPaymentCategoryDraft(account);
+      await tx.category.create({ data: { groupId: hiddenGroup.id, name: draft.name, linkedAccountId: draft.linkedAccountId } });
     }
   });
   revalidateAll();

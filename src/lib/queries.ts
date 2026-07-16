@@ -20,9 +20,13 @@ export async function getSidebarData() {
 // Component (inline-edit inputs, modal triggers), and functions like `derived.available()`
 // can't cross the Server->Client prop boundary. computeDerived() runs client-side instead,
 // mirroring the useMemo in the original single-file app almost exactly.
+//
+// `groups` excludes hidden ones (the singleton "Credit Card Payments" group) so it never gets
+// a visible row in BudgetView — but `categories` is NOT filtered: the linked payment category
+// it contains still has to reach computeDerived for available()/activityIn() to work.
 export async function getBudgetPageData() {
   const [groups, categories, transactions, budgetEntries, accounts] = await Promise.all([
-    prisma.categoryGroup.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.categoryGroup.findMany({ where: { isHidden: false }, orderBy: { createdAt: "asc" } }),
     prisma.category.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.transaction.findMany(),
     prisma.budgetEntry.findMany(),
