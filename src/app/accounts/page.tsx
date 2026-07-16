@@ -9,7 +9,7 @@ export default async function AccountsPage({
   const params = await searchParams;
   const accountFilter = params.account || "all";
   const categoryFilter = params.category || "all";
-  const { transactions, accounts, categories } = await getAccountTransactions({
+  const { transactions, accounts, categories, lastReconciliation } = await getAccountTransactions({
     accountId: accountFilter,
     categoryId: categoryFilter,
   });
@@ -21,6 +21,7 @@ export default async function AccountsPage({
       categories={categories}
       accountFilter={accountFilter}
       categoryFilter={categoryFilter}
+      lastReconciliation={lastReconciliation}
     />
   );
 }

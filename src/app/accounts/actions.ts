@@ -177,9 +177,10 @@ export async function getReconcileInfo(accountId: string): Promise<ReconcileChec
 export type ReconcileResult = { ok: true; adjustmentCents: number } | { ok: false; reason: string };
 
 // Never auto-clears anything and never partially reconciles — if the account isn't fully
-// cleared this just refuses and explains why. Once eligible, the only action taken is a single
-// adjustment transaction (already cleared, since it's dated as of "now" and represents a
-// verified true-up) for whatever difference remains between the tracked and actual balance.
+// cleared this just refuses and explains why. Once eligible, creates a Reconciliation record
+// EVERY time (this is the audit trail — a clean reconciliation with no discrepancy used to
+// leave zero trace anywhere), plus a single adjustment transaction (already cleared, dated as
+// of "now") only when the statement balance actually differs from the tracked one.
 export async function reconcileAccount(accountId: string, actualBalance: string): Promise<ReconcileResult> {
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) return { ok: false, reason: "Account not found." };
@@ -188,26 +189,35 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
   if (unclearedCount > 0) return { ok: false, reason: unclearedReason(unclearedCount) };
 
   const currentBalanceCents = transactions.reduce((s, t) => s + t.amountCents, 0);
-  const diff = parseMoney(actualBalance) - currentBalanceCents;
+  const actualCents = parseMoney(actualBalance);
+  const diff = actualCents - currentBalanceCents;
+  const today = new Date().toISOString().slice(0, 10);
 
-  if (diff !== 0) {
-    // Matches addAccount's starting-balance convention: a positive adjustment is income unless
-    // the account is a credit card (where a positive difference just means less debt than
-    // tracked, not new income).
-    const isIncome = diff > 0 && account.type !== "CREDIT";
-    await prisma.transaction.create({
-      data: {
-        accountId,
-        date: new Date().toISOString().slice(0, 10),
-        payee: "Reconciliation Adjustment",
-        kind: isIncome ? "INCOME" : "NORMAL",
-        categoryId: null,
-        amountCents: diff,
-        cleared: true,
-        memo: "",
-      },
+  await prisma.$transaction(async (tx) => {
+    let adjustmentTransactionId: string | null = null;
+    if (diff !== 0) {
+      // Matches addAccount's starting-balance convention: a positive adjustment is income
+      // unless the account is a credit card (where a positive difference just means less debt
+      // than tracked, not new income).
+      const isIncome = diff > 0 && account.type !== "CREDIT";
+      const adjustment = await tx.transaction.create({
+        data: {
+          accountId,
+          date: today,
+          payee: "Reconciliation Adjustment",
+          kind: isIncome ? "INCOME" : "NORMAL",
+          categoryId: null,
+          amountCents: diff,
+          cleared: true,
+          memo: "",
+        },
+      });
+      adjustmentTransactionId = adjustment.id;
+    }
+    await tx.reconciliation.create({
+      data: { accountId, date: today, statementBalanceCents: actualCents, adjustmentCents: diff, adjustmentTransactionId },
     });
-  }
+  });
 
   revalidateAll();
   return { ok: true, adjustmentCents: diff };

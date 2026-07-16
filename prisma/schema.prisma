@@ -30,14 +30,15 @@ enum GoalType {
 }
 
 model Account {
-  id              String        @id @default(cuid())
+  id              String           @id @default(cuid())
   name            String
   type            AccountType
-  onBudget        Boolean       @default(true)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  onBudget        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   transactions    Transaction[]
   paymentCategory Category? // the linked "pay this card" category, if this is a credit account
+  reconciliations Reconciliation[]
 
   @@map("accounts")
 }
@@ -88,24 +89,46 @@ model BudgetEntry {
 }
 
 model Transaction {
-  id          String          @id @default(cuid())
-  accountId   String
-  account     Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  date        String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
-  payee       String
-  memo        String          @default("")
-  kind        TransactionKind @default(NORMAL)
-  categoryId  String?
-  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  amountCents Int // signed cents; positive = inflow, negative = outflow
-  cleared     Boolean         @default(false)
-  transferId  String? // shared by both legs of a transfer
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  date           String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
+  payee          String
+  memo           String          @default("")
+  kind           TransactionKind @default(NORMAL)
+  categoryId     String?
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountCents    Int // signed cents; positive = inflow, negative = outflow
+  cleared        Boolean         @default(false)
+  transferId     String? // shared by both legs of a transfer
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  reconciliation Reconciliation? // set if this transaction is the adjustment a reconciliation produced
 
   @@index([accountId, date])
   @@index([categoryId, date])
   @@index([kind])
   @@index([transferId])
   @@map("transactions")
+}
+
+// One row per reconciliation performed, whether or not it produced an adjustment — this is the
+// audit trail the "Reconcile" flow (src/app/accounts/actions.ts) didn't have before: without
+// it, a clean reconciliation (statement balance already matched) left zero trace anywhere.
+model Reconciliation {
+  id                      String       @id @default(cuid())
+  accountId               String
+  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date                    String // "YYYY-MM-DD", the day the reconciliation was performed
+  statementBalanceCents   Int // the actual balance the user entered
+  adjustmentCents         Int // 0 if the tracked balance already matched
+  adjustmentTransactionId String?      @unique
+  // SetNull (not Restrict/Cascade): if the user later deletes the adjustment transaction from
+  // the register, the reconciliation record — the audit trail itself — should still stand;
+  // it just loses the link to a transaction that no longer exists.
+  adjustmentTransaction   Transaction? @relation(fields: [adjustmentTransactionId], references: [id], onDelete: SetNull)
+  createdAt               DateTime     @default(now())
+
+  @@index([accountId, date])
+  @@map("reconciliations")
 }

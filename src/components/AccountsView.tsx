@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Check, Trash2, ScrollText } from "lucide-react";
-import { fmt, TXN_GRID } from "@/lib/format";
+import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo } from "@/app/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
-import type { Account, Category, Transaction } from "@/generated/prisma/client";
+import type { Account, Category, Reconciliation, Transaction } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
 export function AccountsView({
@@ -17,12 +17,14 @@ export function AccountsView({
   categories,
   accountFilter,
   categoryFilter,
+  lastReconciliation,
 }: {
   transactions: Transaction[];
   accounts: Account[];
   categories: Category[];
   accountFilter: string;
   categoryFilter: string;
+  lastReconciliation: Reconciliation | null;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -115,6 +117,9 @@ export function AccountsView({
             <span style={{ color: "var(--ink2)" }}>
               Uncleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(uncleared)}</b>
             </span>
+            {accountFilter !== "all" && (
+              <span style={{ color: "var(--ink3)" }}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>

@@ -49,7 +49,7 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     where.categoryId = filters.categoryId;
   }
 
-  const [transactions, accounts, categories] = await Promise.all([
+  const [transactions, accounts, categories, lastReconciliation] = await Promise.all([
     prisma.transaction.findMany({ where, orderBy: { date: "desc" } }),
     prisma.account.findMany({ orderBy: { createdAt: "asc" } }),
     // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which
@@ -58,8 +58,11 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     // isPaymentCategory guard), so they shouldn't appear as a selectable option in the
     // category filter or the transaction editor's category picker.
     prisma.category.findMany({ where: { linkedAccountId: null }, orderBy: { createdAt: "asc" } }),
+    // Only meaningful for a single selected account — "all accounts" has no one reconciliation
+    // history to show.
+    filters.accountId !== "all" ? prisma.reconciliation.findFirst({ where: { accountId: filters.accountId }, orderBy: { createdAt: "desc" } }) : null,
   ]);
-  return { transactions, accounts, categories };
+  return { transactions, accounts, categories, lastReconciliation };
 }
 
 export async function getReportsData() {

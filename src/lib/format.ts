@@ -18,6 +18,11 @@ export const monthShort = (ym: string) => {
   return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "short" });
 };
 
+export const dateLabel = (dateStr: string) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
+
 export const fmt = (cents: number | null | undefined) => {
   const v = (cents || 0) / 100;
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
