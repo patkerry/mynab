@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft } from "./budget";
+import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage } from "./budget";
 import type { BudgetInputs } from "./budget";
 import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma/client";
 
@@ -315,6 +315,58 @@ describe("card-to-card balance transfers", () => {
   });
 });
 
-describe("known, deferred limitations", () => {
-  it.todo("overspending: a credit purchase larger than what its spending category has available should surface the uncovered shortfall instead of silently over-crediting the payment category");
+describe("overspend coverage (credit-card overspending auto-covered from Ready-to-Assign)", () => {
+  it("needs no coverage when the category isn't overspent", () => {
+    const income = txn({ id: "t0", accountId: "a_check", date: `${MONTH}-01`, kind: "INCOME", amountCents: 100000 });
+    const assign = budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: MONTH, amountCents: 5000 });
+    const purchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -3000 });
+    const inputs = baseInputs([income, purchase], [assign]);
+
+    expect(computeDerived(inputs, MONTH).available("c_groc", MONTH)).toBe(2000); // not overspent
+    expect(computeOverspendCoverage(inputs, "c_groc", MONTH)).toBe(0);
+  });
+
+  it("fully covers the shortfall from Ready-to-Assign when there's enough", () => {
+    const income = txn({ id: "t0", accountId: "a_check", date: `${MONTH}-01`, kind: "INCOME", amountCents: 100000 });
+    const purchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -8000 });
+    const inputs = baseInputs([income, purchase]); // nothing assigned -> fully overspent by 8000
+
+    const before = computeDerived(inputs, MONTH);
+    expect(before.available("c_groc", MONTH)).toBe(-8000);
+    expect(before.readyToAssign).toBe(100000);
+
+    const coverage = computeOverspendCoverage(inputs, "c_groc", MONTH);
+    expect(coverage).toBe(8000); // fully covered, RTA has plenty
+
+    // Applying it (as the Server Action would, via a BudgetEntry upsert) zeroes out the
+    // category and reduces RTA by exactly the coverage amount — conserving the total, the same
+    // way any assignment (auto or manual) always does.
+    const covered = budgetEntry({ id: "b_cover", categoryId: "c_groc", yearMonth: MONTH, amountCents: coverage });
+    const after = computeDerived(baseInputs([income, purchase], [covered]), MONTH);
+    expect(after.available("c_groc", MONTH)).toBe(0);
+    expect(after.readyToAssign).toBe(before.readyToAssign - coverage);
+  });
+
+  it("only partially covers the shortfall when Ready-to-Assign doesn't have enough, leaving the remainder negative", () => {
+    const income = txn({ id: "t0", accountId: "a_check", date: `${MONTH}-01`, kind: "INCOME", amountCents: 3000 }); // only $30 in RTA
+    const purchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -8000 }); // $80 overspend
+    const inputs = baseInputs([income, purchase]);
+
+    expect(computeDerived(inputs, MONTH).available("c_groc", MONTH)).toBe(-8000);
+    const coverage = computeOverspendCoverage(inputs, "c_groc", MONTH);
+    expect(coverage).toBe(3000); // capped at what RTA actually has
+
+    const covered = budgetEntry({ id: "b_cover", categoryId: "c_groc", yearMonth: MONTH, amountCents: coverage });
+    const after = computeDerived(baseInputs([income, purchase], [covered]), MONTH);
+    expect(after.available("c_groc", MONTH)).toBe(-5000); // $80 shortfall - $30 covered = $50 still short
+    expect(after.readyToAssign).toBe(0);
+  });
+
+  it("needs no coverage when Ready-to-Assign is zero or negative", () => {
+    const purchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -8000 });
+    const inputs = baseInputs([purchase]); // no income at all -> RTA is 0
+
+    expect(computeDerived(inputs, MONTH).readyToAssign).toBe(0);
+    expect(computeOverspendCoverage(inputs, "c_groc", MONTH)).toBe(0);
+  });
 });

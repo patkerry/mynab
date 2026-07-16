@@ -125,14 +125,15 @@ function buildTransferPairLookup(transactions: Transaction[]): Map<string, Trans
 // buildActivityByMonth (the aggregate path) and computePaymentCategoryBreakdown (the
 // per-transaction transparency path) so the two can't silently drift apart.
 //
-// TODO(overspending): this still assumes every credit purchase is fully covered by its spending
-// category (per spec, first pass) — a purchase that exceeds what its category has available
-// still moves the full amount, it just leaves that category negative rather than pulling the
-// shortfall from Ready-to-Assign the way real YNAB does. Uncategorized card charges
-// (categoryId===null) still never reach the `categoryId != null` check below and so still don't
-// move money into the payment category — but this is now considerably less likely to matter in
-// practice, since a transaction can no longer be marked cleared while uncategorized (see
-// toggleCleared in accounts/actions.ts), and reconciliation refuses unless everything's cleared.
+// This function still moves the FULL purchase amount into the payment category regardless of
+// whether the spending category actually had that much available — that's intentional, not a
+// gap: computeOverspendCoverage (below) separately auto-assigns any shortfall from
+// Ready-to-Assign so the spending category doesn't just sit negative, mirroring real YNAB.
+// Uncategorized card charges (categoryId===null) still never reach the `categoryId != null`
+// check below and so still don't move money into the payment category, but a transaction can no
+// longer be marked cleared while uncategorized (see toggleCleared in accounts/actions.ts), and
+// reconciliation refuses unless everything's cleared — considerably narrowing when this can
+// matter in practice.
 type CardTransactionClassification =
   | { type: "purchase"; sourceCategoryId: string; contribution: number } // signed: purchase +, refund -
   | { type: "payment"; transactionId: string; amount: number } // raw positive payment amount
@@ -264,6 +265,35 @@ export type CatBreakdown = {
   paymentsTotal: number;
   paymentsCount: number;
 };
+
+// Ports real YNAB's credit-overspending rule: if a credit card purchase pushes its spending
+// category's available below zero, the shortfall is auto-covered from Ready-to-Assign (up to
+// however much RTA actually has) instead of just sitting negative until the user notices and
+// fixes it manually. This is the last of the three deferred credit-card gaps — scoped strictly
+// to credit-card-caused overspends, per spec; cash overspending is unaffected and still just
+// goes negative, matching how it always has.
+//
+// This is a PURE calculation of how much coverage is warranted given the current state
+// (including whatever purchase already pushed the category negative) — it does not itself
+// write anything. The caller (addTransaction/updateTransaction in accounts/actions.ts) applies
+// it by upserting a BudgetEntry for (categoryId, month), the exact same mechanism a manual
+// assignment already uses — auto-coverage is really just an auto-triggered "assign this much,"
+// not a new kind of money movement. That's also why it doesn't break the "total available is
+// conserved" invariant tested elsewhere: like any assignment, it moves money FROM
+// Ready-to-Assign INTO a category's available, it doesn't create or destroy any.
+//
+// Deliberately does not attempt to claw back coverage if the transaction that triggered it is
+// later edited or deleted — once assigned, it behaves exactly like a manual assignment would in
+// the same situation (money sitting there is simply "available" again), which keeps this a
+// one-directional, side-effect-free-to-reason-about operation rather than requiring a
+// reconciliation pass over history.
+export function computeOverspendCoverage(inputs: BudgetInputs, categoryId: string, month: string): number {
+  const derived = computeDerived(inputs, month);
+  const avail = derived.available(categoryId, month);
+  if (avail >= 0) return 0;
+  const shortfall = -avail;
+  return Math.max(0, Math.min(shortfall, derived.readyToAssign));
+}
 
 export const PAYMENT_GROUP_NAME = "Credit Card Payments";
 

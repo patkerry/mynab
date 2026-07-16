@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { parseMoney, uid, curYM } from "@/lib/format";
-import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "@/lib/budget";
-import type { AccountType } from "@/generated/prisma/client";
+import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
+import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
+import type { Prisma, AccountType } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
 function revalidateAll() {
@@ -20,6 +20,34 @@ function revalidateAll() {
 async function isPaymentCategory(categoryId: string): Promise<boolean> {
   const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { linkedAccountId: true } });
   return category?.linkedAccountId != null;
+}
+
+// Applies computeOverspendCoverage (src/lib/budget.ts): if this transaction was a credit card
+// purchase that pushed its category negative, auto-assign the shortfall from Ready-to-Assign —
+// same mechanism a manual assignment uses (upsert a BudgetEntry), just auto-triggered. Only
+// fires for CREDIT accounts with a real categoryId, matching the deferred item's exact scope;
+// cash overspending is untouched. Must run inside the same `tx` as the transaction write so it
+// sees it when re-fetching current state.
+async function applyOverspendCoverage(tx: Prisma.TransactionClient, accountId: string, categoryId: string | null, date: string) {
+  if (!categoryId) return;
+  const account = await tx.account.findUnique({ where: { id: accountId } });
+  if (account?.type !== "CREDIT") return;
+
+  const [accounts, categories, transactions, budgetEntries] = await Promise.all([
+    tx.account.findMany(),
+    tx.category.findMany(),
+    tx.transaction.findMany(),
+    tx.budgetEntry.findMany(),
+  ]);
+  const month = monthKeyOf(date);
+  const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries }, categoryId, month);
+  if (coverage <= 0) return;
+
+  await tx.budgetEntry.upsert({
+    where: { categoryId_yearMonth: { categoryId, yearMonth: month } },
+    update: { amountCents: { increment: coverage } },
+    create: { categoryId, yearMonth: month, amountCents: coverage },
+  });
 }
 
 // Ports addTxn (ynab-clone.jsx lines 575-596): categoryId is "transfer:<accountId>",
@@ -87,17 +115,21 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
     });
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
-    await prisma.transaction.create({
-      data: {
-        accountId: draft.accountId,
-        date: draft.date,
-        payee: draft.payee.trim() || "Payee",
-        kind: "NORMAL",
-        categoryId: draft.categoryId || null,
-        amountCents: -cents,
-        cleared: false,
-        memo,
-      },
+    const categoryId = draft.categoryId || null;
+    await prisma.$transaction(async (tx) => {
+      await tx.transaction.create({
+        data: {
+          accountId: draft.accountId,
+          date: draft.date,
+          payee: draft.payee.trim() || "Payee",
+          kind: "NORMAL",
+          categoryId,
+          amountCents: -cents,
+          cleared: false,
+          memo,
+        },
+      });
+      await applyOverspendCoverage(tx, draft.accountId, categoryId, draft.date);
     });
   }
   revalidateAll();
@@ -127,17 +159,21 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     });
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
-    await prisma.transaction.update({
-      where: { id },
-      data: {
-        date: draft.date,
-        accountId: draft.accountId,
-        memo,
-        kind: "NORMAL",
-        categoryId: draft.categoryId || null,
-        amountCents: -cents,
-        payee: draft.payee.trim() || "Payee",
-      },
+    const categoryId = draft.categoryId || null;
+    await prisma.$transaction(async (tx) => {
+      await tx.transaction.update({
+        where: { id },
+        data: {
+          date: draft.date,
+          accountId: draft.accountId,
+          memo,
+          kind: "NORMAL",
+          categoryId,
+          amountCents: -cents,
+          payee: draft.payee.trim() || "Payee",
+        },
+      });
+      await applyOverspendCoverage(tx, draft.accountId, categoryId, draft.date);
     });
   }
   revalidateAll();
