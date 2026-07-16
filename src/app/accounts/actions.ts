@@ -3,12 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseMoney, uid, curYM } from "@/lib/format";
-import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "@/lib/budget";
+import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "@/lib/budget";
 import type { AccountType } from "@/generated/prisma/client";
 import type { TxnDraft } from "@/lib/types";
 
 function revalidateAll() {
   revalidatePath("/", "layout");
+}
+
+// A payment category's activity is entirely derived from its linked card's transactions
+// (see computeDerived/buildActivityByMonth in src/lib/budget.ts) — it must never be the direct
+// categoryId of a transaction. Tagging one directly would double-count against the derived
+// contribution and cancel to a net-zero effect on every category, silently discarding that
+// transaction's budget impact. Checked server-side (not just hidden from the UI picker) so
+// this can't be bypassed by calling the action directly.
+async function isPaymentCategory(categoryId: string): Promise<boolean> {
+  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { linkedAccountId: true } });
+  return category?.linkedAccountId != null;
 }
 
 // Ports addTxn (ynab-clone.jsx lines 575-596): categoryId is "transfer:<accountId>",
@@ -19,6 +30,12 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
   const memo = (draft.memo || "").trim();
 
   if (draft.categoryId.startsWith("transfer:")) {
+    // A transfer's direction is already fully expressed by which account is picked as source
+    // vs. destination — allowing a negative amount here (unlike a normal transaction, where
+    // it deliberately means "refund/inflow") only lets a same-signed pair of legs get flipped,
+    // which buildActivityByMonth's `amountCents > 0 = payment` check would then misread as a
+    // payment landing on a card that actually just took on more debt.
+    if (cents <= 0) return false;
     const toId = draft.categoryId.slice(9);
     if (!toId || toId === draft.accountId) return false;
     const [fromAcct, toAcct] = await Promise.all([
@@ -69,6 +86,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
       },
     });
   } else {
+    if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
     await prisma.transaction.create({
       data: {
         accountId: draft.accountId,
@@ -108,6 +126,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       },
     });
   } else {
+    if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
     await prisma.transaction.update({
       where: { id },
       data: {
@@ -169,9 +188,15 @@ export async function addAccount(input: { name: string; type: AccountType; balan
       });
     }
     if (input.type === "CREDIT") {
-      const hiddenGroup =
-        (await tx.categoryGroup.findFirst({ where: { isHidden: true } })) ??
-        (await tx.categoryGroup.create({ data: { name: PAYMENT_GROUP_NAME, isHidden: true } }));
+      // Upsert on a fixed, well-known id (matching the backfill migration's convention)
+      // instead of findFirst-then-create — that pattern raced under concurrent requests since
+      // nothing constrains `isHidden` to at most one true row. Upserting on the id's own
+      // uniqueness is atomic regardless of concurrency.
+      const hiddenGroup = await tx.categoryGroup.upsert({
+        where: { id: PAYMENT_GROUP_ID },
+        update: {},
+        create: { id: PAYMENT_GROUP_ID, name: PAYMENT_GROUP_NAME, isHidden: true },
+      });
       const draft = buildPaymentCategoryDraft(account);
       await tx.category.create({ data: { groupId: hiddenGroup.id, name: draft.name, linkedAccountId: draft.linkedAccountId } });
     }

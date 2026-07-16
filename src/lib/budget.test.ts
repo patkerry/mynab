@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, hasPaymentCategory } from "./budget";
+import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft } from "./budget";
 import type { BudgetInputs } from "./budget";
 import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma/client";
 
@@ -165,12 +165,6 @@ describe("invariant 1 (pure half): payment category shape", () => {
       name: "Visa Credit Card Payment",
       linkedAccountId: "a_card",
     });
-  });
-
-  it("detects whether an account already has a linked payment category", () => {
-    const categories = baseInputs().categories;
-    expect(hasPaymentCategory(categories, "a_card")).toBe(true);
-    expect(hasPaymentCategory(categories, "a_other")).toBe(false);
   });
 });
 

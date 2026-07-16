@@ -175,18 +175,22 @@ export function computePaymentCategoryBreakdown(
 
 export const PAYMENT_GROUP_NAME = "Credit Card Payments";
 
+// A fixed, well-known id for the singleton hidden group — matches the id the backfill
+// migration (prisma/migrations/20260716180000_add_payment_categories) hardcodes. Using the
+// same fixed id here lets addAccount `upsert` on it atomically instead of a
+// findFirst-then-conditional-create, which was a real TOCTOU race under concurrent requests
+// (no unique constraint backs `isHidden`, so two concurrent creates could each find nothing
+// and both insert a group).
+export const PAYMENT_GROUP_ID = "grp_cc_payments";
+
 export type PaymentCategoryDraft = { name: string; linkedAccountId: string };
 
 // The pure half of invariant 1 ("creating a credit account auto-creates exactly one linked
-// payment category"): decides what that category should look like. The DB half (find-or-create
-// the hidden group, actually insert the row, cascade-delete) lives in accounts/actions.ts —
-// this stays here so the naming/idempotency decision is unit-testable without Prisma.
+// payment category"): decides what that category should look like. The DB half (upsert the
+// hidden group, insert the row, cascade-delete) lives in accounts/actions.ts — this stays here
+// so the naming/idempotency decision is unit-testable without Prisma.
 export function buildPaymentCategoryDraft(account: Pick<Account, "id" | "name">): PaymentCategoryDraft {
   return { name: `${account.name} Payment`, linkedAccountId: account.id };
-}
-
-export function hasPaymentCategory(categories: Pick<Category, "linkedAccountId">[], accountId: string): boolean {
-  return categories.some((c) => c.linkedAccountId === accountId);
 }
 
 export type GoalProgress = { pct: number; met: boolean };

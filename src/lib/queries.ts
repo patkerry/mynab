@@ -52,7 +52,12 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   const [transactions, accounts, categories] = await Promise.all([
     prisma.transaction.findMany({ where, orderBy: { date: "desc" } }),
     prisma.account.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.category.findMany({ orderBy: { createdAt: "asc" } }),
+    // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which
+    // needs them for computeDerived): they're never a valid categoryId for a transaction
+    // (their activity is derived, not tagged — see addTransaction/updateTransaction's
+    // isPaymentCategory guard), so they shouldn't appear as a selectable option in the
+    // category filter or the transaction editor's category picker.
+    prisma.category.findMany({ where: { linkedAccountId: null }, orderBy: { createdAt: "asc" } }),
   ]);
   return { transactions, accounts, categories };
 }
