@@ -215,29 +215,16 @@ describe("payment category transparency breakdown", () => {
     expect(breakdownSum - paymentsSum).toBe(derived.activityIn("c_pay", MONTH));
 
     // Groceries nets 3000 (5000 - 2000), Dining contributes 1500, one payment of 4000.
-    expect(result.breakdown.find((b) => b.sourceCategoryId === "c_groc")?.amount).toBe(3000);
-    expect(result.breakdown.find((b) => b.sourceCategoryId === "c_dine")?.amount).toBe(1500);
+    expect(result.breakdown.find((b) => "sourceCategoryId" in b && b.sourceCategoryId === "c_groc")?.amount).toBe(3000);
+    expect(result.breakdown.find((b) => "sourceCategoryId" in b && b.sourceCategoryId === "c_dine")?.amount).toBe(1500);
     expect(result.payments).toEqual([{ transactionId: "t4", amount: 4000 }]);
   });
 
   it("returns null for a category that isn't a payment category", () => {
     expect(computePaymentCategoryBreakdown(baseInputs(), "c_groc", MONTH)).toBeNull();
   });
-});
 
-describe("invariant 1 (pure half): payment category shape", () => {
-  it("builds a name derived from the account and links to it", () => {
-    expect(buildPaymentCategoryDraft({ id: "a_card", name: "Visa Credit Card" })).toEqual({
-      name: "Visa Credit Card Payment",
-      linkedAccountId: "a_card",
-    });
-  });
-});
-
-describe("known, deferred limitations", () => {
-  it.todo("overspending: a credit purchase larger than what its spending category has available should surface the uncovered shortfall instead of silently over-crediting the payment category");
-
-  it("card-to-card balance transfer only credits the destination card's payment category (regression baseline, not desired final behavior)", () => {
+  it("attributes a card-to-card balance transfer to the counterpart account, not a spending category", () => {
     const cardA = account({ id: "a_cardA", name: "Card A", type: "CREDIT" });
     const cardB = account({ id: "a_cardB", name: "Card B", type: "CREDIT" });
     const payA = category({ id: "c_payA", groupId: "g_hidden", name: "Card A Payment", linkedAccountId: "a_cardA" });
@@ -251,14 +238,83 @@ describe("known, deferred limitations", () => {
       ],
       budgetEntries: [],
     };
+
+    const result = computePaymentCategoryBreakdown(inputs, "c_payA", MONTH)!;
+    expect(result.breakdown).toEqual([{ sourceAccountId: "a_cardB", amount: 10000 }]);
+    expect(result.payments).toEqual([]);
+  });
+});
+
+describe("invariant 1 (pure half): payment category shape", () => {
+  it("builds a name derived from the account and links to it", () => {
+    expect(buildPaymentCategoryDraft({ id: "a_card", name: "Visa Credit Card" })).toEqual({
+      name: "Visa Credit Card Payment",
+      linkedAccountId: "a_card",
+    });
+  });
+});
+
+describe("card-to-card balance transfers", () => {
+  function twoCardFixture(transferAmountCents: number) {
+    const cardA = account({ id: "a_cardA", name: "Card A", type: "CREDIT" });
+    const cardB = account({ id: "a_cardB", name: "Card B", type: "CREDIT" });
+    const payA = category({ id: "c_payA", groupId: "g_hidden", name: "Card A Payment", linkedAccountId: "a_cardA" });
+    const payB = category({ id: "c_payB", groupId: "g_hidden", name: "Card B Payment", linkedAccountId: "a_cardB" });
+    const inputs: BudgetInputs = {
+      accounts: [cardA, cardB],
+      categories: [payA, payB],
+      transactions: [
+        txn({ id: "t1", accountId: "a_cardA", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: -transferAmountCents, transferId: "xfer1" }),
+        txn({ id: "t2", accountId: "a_cardB", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: transferAmountCents, transferId: "xfer1" }),
+      ],
+      budgetEntries: [],
+    };
+    return inputs;
+  }
+
+  it("credits the destination card's payment category and DEBITS the source card's payment category by the same amount (previously a known gap — now fixed)", () => {
+    const inputs = twoCardFixture(10000);
     const derived = computeDerived(inputs, MONTH);
 
     // Destination (B) is credited as if it received a payment — its "amount needed" drops.
     expect(derived.activityIn("c_payB", MONTH)).toBe(-10000);
-    // Source (A) took on the debt (its balance dropped by 10000, same as any purchase would)
-    // but its payment category is NOT increased to reflect that — this is the known gap.
-    expect(derived.activityIn("c_payA", MONTH)).toBe(0);
+    // Source (A) took on the debt (its balance dropped by 10000, same as any purchase would) —
+    // its payment category now increases to reflect that, the same way a real purchase would.
+    expect(derived.activityIn("c_payA", MONTH)).toBe(10000);
     expect(derived.acctBalance["a_cardA"]).toBe(-10000);
     expect(derived.acctBalance["a_cardB"]).toBe(10000);
   });
+
+  it("conserves total available across both payment categories, same as an ordinary purchase does", () => {
+    const before = computeDerived(twoCardFixture(0), MONTH); // no transfer yet, both start at 0
+    const totalBefore = ["c_payA", "c_payB"].reduce((s, id) => s + before.available(id, MONTH), 0);
+
+    const after = computeDerived(twoCardFixture(10000), MONTH);
+    const totalAfter = ["c_payA", "c_payB"].reduce((s, id) => s + after.available(id, MONTH), 0);
+
+    expect(totalAfter).toBe(totalBefore); // moved from A to B, not created or destroyed
+  });
+
+  it("a transfer to a NON-card account (e.g. a cash advance into checking) is left unaffected — only card-to-card debits the source", () => {
+    const cardA = account({ id: "a_cardA", name: "Card A", type: "CREDIT" });
+    const checking = account({ id: "a_check2", name: "Checking", type: "CHECKING" });
+    const payA = category({ id: "c_payA", groupId: "g_hidden", name: "Card A Payment", linkedAccountId: "a_cardA" });
+    const inputs: BudgetInputs = {
+      accounts: [cardA, checking],
+      categories: [payA],
+      transactions: [
+        txn({ id: "t1", accountId: "a_cardA", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: -5000, transferId: "xfer1" }),
+        txn({ id: "t2", accountId: "a_check2", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: 5000, transferId: "xfer1" }),
+      ],
+      budgetEntries: [],
+    };
+    const derived = computeDerived(inputs, MONTH);
+    // Not a card-to-card transfer (checking isn't a linked card) — behavior is unchanged from
+    // before this fix: the card's own payment category doesn't move.
+    expect(derived.activityIn("c_payA", MONTH)).toBe(0);
+  });
+});
+
+describe("known, deferred limitations", () => {
+  it.todo("overspending: a credit purchase larger than what its spending category has available should surface the uncovered shortfall instead of silently over-crediting the payment category");
 });

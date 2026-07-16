@@ -97,32 +97,69 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   };
 }
 
-// Classifies a transaction on a credit card's linked account as a covered purchase (or its
-// refund/return — same branch, signed negation nets them correctly, unlike abs()) or a payment
-// landing on the card. Shared by buildActivityByMonth (the aggregate path) and
-// computePaymentCategoryBreakdown (the per-transaction transparency path) so the two can't
-// silently drift apart the way two independently-written copies of this predicate would.
+// Looks up the OTHER leg of a transfer by transferId — needed to tell a card-to-card balance
+// transfer apart from an ordinary payment (checking -> card) or cash advance (card -> checking):
+// only the counterpart's account tells you that. Shared by buildActivityByMonth and
+// computePaymentCategoryBreakdown so both see the same pairing.
+function buildTransferPairLookup(transactions: Transaction[]): Map<string, Transaction> {
+  const legsByTransferId = new Map<string, Transaction[]>();
+  transactions.forEach((t) => {
+    if (!t.transferId) return;
+    if (!legsByTransferId.has(t.transferId)) legsByTransferId.set(t.transferId, []);
+    legsByTransferId.get(t.transferId)!.push(t);
+  });
+  const pair = new Map<string, Transaction>();
+  legsByTransferId.forEach((legs) => {
+    if (legs.length === 2) {
+      pair.set(legs[0].id, legs[1]);
+      pair.set(legs[1].id, legs[0]);
+    }
+  });
+  return pair;
+}
+
+// Classifies a transaction on a credit card's linked account as: a covered purchase (or its
+// refund/return — same branch, signed negation nets them correctly, unlike abs()); a payment
+// landing on the card; or, for a balance transfer between two linked cards, the debt the SOURCE
+// card absorbed (the mirror image of the destination card's "payment"). Shared by
+// buildActivityByMonth (the aggregate path) and computePaymentCategoryBreakdown (the
+// per-transaction transparency path) so the two can't silently drift apart.
 //
-// TODO(overspending): this assumes every credit purchase is fully covered by its spending
-// category (per spec, first pass). Two related gaps are deliberately deferred here, not
-// silently fixed: (1) uncategorized card charges (categoryId===null) never reach the
-// `categoryId != null` check below, so they never move money into the payment category even
-// though they do increase the card's real debt — same shape of problem as overspending, not a
-// separate bug. (2) a transfer between two on-budget credit cards (a balance transfer) only
-// classifies the DESTINATION leg as a payment; the source leg is "none" here, so the source
-// card's payment category is never credited for the debt it shed. See budget.test.ts for
-// pending regression tests on both.
+// TODO(overspending): this still assumes every credit purchase is fully covered by its spending
+// category (per spec, first pass) — a purchase that exceeds what its category has available
+// still moves the full amount, it just leaves that category negative rather than pulling the
+// shortfall from Ready-to-Assign the way real YNAB does. Uncategorized card charges
+// (categoryId===null) still never reach the `categoryId != null` check below and so still don't
+// move money into the payment category — but this is now considerably less likely to matter in
+// practice, since a transaction can no longer be marked cleared while uncategorized (see
+// toggleCleared in accounts/actions.ts), and reconciliation refuses unless everything's cleared.
 type CardTransactionClassification =
   | { type: "purchase"; sourceCategoryId: string; contribution: number } // signed: purchase +, refund -
   | { type: "payment"; transactionId: string; amount: number } // raw positive payment amount
+  | { type: "cardToCardDebit"; counterpartAccountId: string; amount: number } // raw positive amount absorbed
   | { type: "none" };
 
-function classifyCardTransaction(t: Transaction): CardTransactionClassification {
+function classifyCardTransaction(
+  t: Transaction,
+  transferPair: Map<string, Transaction>,
+  accountIdToPaymentCategoryId: Map<string, string>
+): CardTransactionClassification {
   if (t.kind === "NORMAL" && t.categoryId != null) {
     return { type: "purchase", sourceCategoryId: t.categoryId, contribution: -t.amountCents };
   }
   if (t.kind === "TRANSFER" && t.amountCents > 0) {
     return { type: "payment", transactionId: t.id, amount: t.amountCents };
+  }
+  if (t.kind === "TRANSFER" && t.amountCents < 0) {
+    const otherLeg = transferPair.get(t.id);
+    // Only a balance transfer landing on ANOTHER linked card counts as debt absorbed — a
+    // transfer to a non-card account (e.g. a cash advance into checking) is deliberately left
+    // as "none" here, unchanged from before: unlike two cards' payment categories, whether that
+    // money needs a "job" once it lands in checking isn't something this feature was asked to
+    // model, and guessing would be worse than leaving it alone.
+    if (otherLeg && accountIdToPaymentCategoryId.has(otherLeg.accountId)) {
+      return { type: "cardToCardDebit", counterpartAccountId: otherLeg.accountId, amount: -t.amountCents };
+    }
   }
   return { type: "none" };
 }
@@ -142,21 +179,27 @@ function buildActivityByMonth(
     entries.set(categoryId, (entries.get(categoryId) || 0) + cents);
   };
 
+  const transferPair = buildTransferPairLookup(transactions);
+
   transactions.forEach((t) => {
     const ym = monthKeyOf(t.date);
     if (t.categoryId) add(ym, t.categoryId, t.amountCents);
 
     const paymentCategoryId = accountIdToPaymentCategoryId.get(t.accountId);
     if (!paymentCategoryId) return;
-    const classification = classifyCardTransaction(t);
+    const classification = classifyCardTransaction(t, transferPair, accountIdToPaymentCategoryId);
     if (classification.type === "purchase") add(ym, paymentCategoryId, classification.contribution);
     else if (classification.type === "payment") add(ym, paymentCategoryId, -classification.amount);
+    else if (classification.type === "cardToCardDebit") add(ym, paymentCategoryId, classification.amount);
   });
 
   return byMonth;
 }
 
-export type PaymentBreakdownEntry = { sourceCategoryId: string; amount: number };
+// A breakdown entry is either a real spending category (an ordinary covered purchase) or
+// another linked account (debt absorbed via a card-to-card balance transfer) — never both,
+// discriminated by which field is present.
+export type PaymentBreakdownEntry = { sourceCategoryId: string; amount: number } | { sourceAccountId: string; amount: number };
 export type PaymentEntry = { transactionId: string; amount: number };
 export type PaymentCategoryBreakdown = {
   categoryId: string;
@@ -180,11 +223,17 @@ export function computePaymentCategoryBreakdown(
   if (!category?.linkedAccountId) return null;
 
   const purchasesBySourceCategory = new Map<string, number>();
+  const debtsByCounterpartAccount = new Map<string, number>();
   const payments: PaymentEntry[] = [];
+  const transferPair = buildTransferPairLookup(inputs.transactions);
+  const accountIdToPaymentCategoryId = new Map<string, string>();
+  inputs.categories.forEach((c) => {
+    if (c.linkedAccountId) accountIdToPaymentCategoryId.set(c.linkedAccountId, c.id);
+  });
 
   inputs.transactions.forEach((t) => {
     if (t.accountId !== category.linkedAccountId || monthKeyOf(t.date) !== month) return;
-    const classification = classifyCardTransaction(t);
+    const classification = classifyCardTransaction(t, transferPair, accountIdToPaymentCategoryId);
     if (classification.type === "purchase") {
       purchasesBySourceCategory.set(
         classification.sourceCategoryId,
@@ -192,12 +241,18 @@ export function computePaymentCategoryBreakdown(
       );
     } else if (classification.type === "payment") {
       payments.push({ transactionId: classification.transactionId, amount: classification.amount });
+    } else if (classification.type === "cardToCardDebit") {
+      debtsByCounterpartAccount.set(
+        classification.counterpartAccountId,
+        (debtsByCounterpartAccount.get(classification.counterpartAccountId) || 0) + classification.amount
+      );
     }
   });
 
-  const breakdown: PaymentBreakdownEntry[] = Array.from(purchasesBySourceCategory.entries()).map(
-    ([sourceCategoryId, amount]) => ({ sourceCategoryId, amount })
-  );
+  const breakdown: PaymentBreakdownEntry[] = [
+    ...Array.from(purchasesBySourceCategory.entries()).map(([sourceCategoryId, amount]) => ({ sourceCategoryId, amount })),
+    ...Array.from(debtsByCounterpartAccount.entries()).map(([sourceAccountId, amount]) => ({ sourceAccountId, amount })),
+  ];
 
   return { categoryId, breakdown, payments };
 }

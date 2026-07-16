@@ -14,10 +14,11 @@ function resolveBreakdown(categoryId: string, categories: Category[], transactio
   const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries }, categoryId, month);
   if (!raw) return { sources: [], paymentsTotal: 0, paymentsCount: 0 };
   return {
-    sources: raw.breakdown.map((b) => ({
-      name: categories.find((c) => c.id === b.sourceCategoryId)?.name || "?",
-      amount: b.amount,
-    })),
+    sources: raw.breakdown.map((b) =>
+      "sourceCategoryId" in b
+        ? { name: categories.find((c) => c.id === b.sourceCategoryId)?.name || "?", amount: b.amount }
+        : { name: `Transfer from ${accounts.find((a) => a.id === b.sourceAccountId)?.name || "?"}`, amount: b.amount }
+    ),
     paymentsTotal: raw.payments.reduce((s, p) => s + p.amount, 0),
     paymentsCount: raw.payments.length,
   };
