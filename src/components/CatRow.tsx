@@ -4,12 +4,22 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Target } from "lucide-react";
 import { fmt, parseMoney } from "@/lib/format";
-import { goalProgress, type Derived } from "@/lib/budget";
+import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned } from "@/app/budget/actions";
 import { useModal } from "./modal/ModalContext";
 import type { Category } from "@/generated/prisma/client";
 
-export function CatRow({ c, month, derived }: { c: Category; month: string; derived: Derived }) {
+export function CatRow({
+  c,
+  month,
+  derived,
+  breakdown,
+}: {
+  c: Category;
+  month: string;
+  derived: Derived;
+  breakdown?: CatBreakdown;
+}) {
   const { openModal } = useModal();
   const assigned = derived.assignedIn(c.id, month);
   const activity = derived.activityIn(c.id, month);
@@ -53,7 +63,11 @@ export function CatRow({ c, month, derived }: { c: Category; month: string; deri
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link
-            href={`/accounts?account=all&category=${c.id}`}
+            // Payment categories are never a transaction's own categoryId (see the
+            // isPaymentCategory guard in accounts/actions.ts), so filtering the register by
+            // this category's id would always show zero rows — link to the linked card's
+            // register instead, which is what a user actually wants to inspect here.
+            href={c.linkedAccountId ? `/accounts?account=${c.linkedAccountId}&category=all` : `/accounts?account=all&category=${c.id}`}
             title="View transactions"
             className="cat-name"
             style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", padding: 0, textAlign: "left" }}
@@ -76,6 +90,14 @@ export function CatRow({ c, month, derived }: { c: Category; month: string; deri
             <span style={{ fontSize: 10.5, color: goalInfo.met ? "var(--posInk)" : "var(--warn)", fontWeight: 600, whiteSpace: "nowrap" }}>
               {goalLabel}
             </span>
+          </div>
+        )}
+        {breakdown && (breakdown.sources.length > 0 || breakdown.paymentsCount > 0) && (
+          <div style={{ fontSize: 10.5, color: "var(--ink3)", marginTop: 4 }}>
+            {breakdown.sources.map((s) => `${s.name} ${fmt(s.amount)}`).join(", ")}
+            {breakdown.sources.length > 0 && breakdown.paymentsCount > 0 && " · "}
+            {breakdown.paymentsCount > 0 &&
+              `${breakdown.paymentsCount} payment${breakdown.paymentsCount > 1 ? "s" : ""} ${fmt(breakdown.paymentsTotal)}`}
           </div>
         )}
       </div>

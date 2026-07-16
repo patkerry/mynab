@@ -3,12 +3,25 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Sparkles, Plus, Check } from "lucide-react";
-import { computeDerived } from "@/lib/budget";
+import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { autoAssignGoals } from "@/app/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma/client";
+
+function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], month: string): CatBreakdown {
+  const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries }, categoryId, month);
+  if (!raw) return { sources: [], paymentsTotal: 0, paymentsCount: 0 };
+  return {
+    sources: raw.breakdown.map((b) => ({
+      name: categories.find((c) => c.id === b.sourceCategoryId)?.name || "?",
+      amount: b.amount,
+    })),
+    paymentsTotal: raw.payments.reduce((s, p) => s + p.amount, 0),
+    paymentsCount: raw.payments.length,
+  };
+}
 
 export function BudgetView({
   month,
@@ -39,6 +52,15 @@ export function BudgetView({
     zero: { label: "All Money Assigned", sub: "Every dollar has a job" },
   }[rtaState];
   const bannerColor = rtaState === "pos" ? "var(--pos)" : rtaState === "neg" ? "var(--neg)" : "var(--accent)";
+
+  // Payment categories live in a hidden CategoryGroup (excluded from `groups`) so they don't
+  // get a manageable, renameable group header — but they still need a place for users to
+  // assign to them directly (per spec) and to see the transparency breakdown, so they get a
+  // dedicated, always-visible section below the normal groups instead of vanishing entirely.
+  const paymentCategories = categories.filter((c) => c.linkedAccountId);
+  const pcAssigned = paymentCategories.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
+  const pcActivity = paymentCategories.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
+  const pcAvail = paymentCategories.reduce((s, c) => s + derived.available(c.id, month), 0);
 
   return (
     <>
@@ -159,6 +181,42 @@ export function BudgetView({
               </div>
             );
           })}
+
+          {paymentCategories.length > 0 && (
+            <div className="card" style={{ overflow: "hidden" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 132px 120px 120px",
+                  gap: 8,
+                  padding: "12px 14px",
+                  background: "var(--paper)",
+                  alignItems: "center",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>Credit Card Payments</span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
+                  {fmt(pcAssigned)}
+                </span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
+                  {fmt(pcActivity)}
+                </span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 700, fontSize: 13, color: pcAvail < 0 ? "var(--neg)" : "var(--ink)" }}>
+                  {fmt(pcAvail)}
+                </span>
+              </div>
+              {paymentCategories.map((c) => (
+                <CatRow
+                  key={c.id}
+                  c={c}
+                  month={month}
+                  derived={derived}
+                  breakdown={resolveBreakdown(c.id, categories, transactions, budgetEntries, accounts, month)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>

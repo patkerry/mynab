@@ -132,6 +132,22 @@ describe("conservation of total available (invariant 4)", () => {
   });
 });
 
+describe("retroactive history (documented, intentional — not a bug)", () => {
+  it("a payment category backfilled onto a pre-existing card reflects that card's full transaction history, not just activity from after the category existed", () => {
+    // The backfill migration creates a payment category for an ALREADY-USED card — this
+    // transaction predates the category's own (conceptual) existence by six months.
+    const priorMonth = "2026-01";
+    const oldPurchase = txn({ id: "old1", accountId: "a_card", date: `${priorMonth}-10`, kind: "NORMAL", categoryId: "c_groc", amountCents: -10000 });
+    const derived = computeDerived(baseInputs([oldPurchase]), MONTH);
+
+    // No BudgetEntry could ever have existed for c_pay in priorMonth (the category didn't
+    // exist "back then" either) — assignedUpTo is 0, but activityUpTo still picks up the old
+    // purchase since activity is keyed by the linked card's transactions, not by the category's
+    // own creation date. This mirrors acctBalance's own all-time-cumulative semantics.
+    expect(derived.available("c_pay", MONTH)).toBe(10000);
+  });
+});
+
 describe("payment category transparency breakdown", () => {
   it("reconciles with activityIn: sum(breakdown) - sum(payments) === activityIn(P, month)", () => {
     const purchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -5000 });

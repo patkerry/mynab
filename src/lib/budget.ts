@@ -54,6 +54,15 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   // aside to pay this card." Its activity is DERIVED rather than summed from transactions
   // tagged with its own id (see buildActivityByMonth below) — everything else about it
   // (assignedIn/assignedUpTo/available/goals) works exactly like any other category.
+  //
+  // Retroactive history, intentional: because activity is derived from the linked card's
+  // transactions rather than transactions tagged with the category's own id, a payment category
+  // backfilled onto a pre-existing card (see the payment_categories migration) immediately
+  // reflects that card's ENTIRE transaction history in available()'s all-time cumulative sum —
+  // not just activity from after the category/migration existed. This mirrors acctBalance
+  // (also an unbounded all-time sum) and produces the semantically correct "how much of this
+  // card's current debt isn't budgeted for yet" figure. Locked in by a test in budget.test.ts
+  // ("retroactive history") so this doesn't get mistaken for a bug and silently "fixed" later.
   const accountIdToPaymentCategoryId = new Map<string, string>();
   categories.forEach((c) => {
     if (c.linkedAccountId) accountIdToPaymentCategoryId.set(c.linkedAccountId, c.id);
@@ -88,10 +97,11 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   };
 }
 
-// One pass over all transactions building Map<month, Map<categoryId, netCents>>. Every
-// category gets its ordinary "sum of transactions tagged with this categoryId" contribution;
-// payment categories additionally get a derived contribution from their linked card's
-// transactions (covered purchases add, payments to the card subtract).
+// Classifies a transaction on a credit card's linked account as a covered purchase (or its
+// refund/return — same branch, signed negation nets them correctly, unlike abs()) or a payment
+// landing on the card. Shared by buildActivityByMonth (the aggregate path) and
+// computePaymentCategoryBreakdown (the per-transaction transparency path) so the two can't
+// silently drift apart the way two independently-written copies of this predicate would.
 //
 // TODO(overspending): this assumes every credit purchase is fully covered by its spending
 // category (per spec, first pass). Two related gaps are deliberately deferred here, not
@@ -99,8 +109,28 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
 // `categoryId != null` check below, so they never move money into the payment category even
 // though they do increase the card's real debt — same shape of problem as overspending, not a
 // separate bug. (2) a transfer between two on-budget credit cards (a balance transfer) only
-// updates the DESTINATION card's payment category here; the source card's payment category is
-// never credited for the debt it shed. See budget.test.ts for pending regression tests on both.
+// classifies the DESTINATION leg as a payment; the source leg is "none" here, so the source
+// card's payment category is never credited for the debt it shed. See budget.test.ts for
+// pending regression tests on both.
+type CardTransactionClassification =
+  | { type: "purchase"; sourceCategoryId: string; contribution: number } // signed: purchase +, refund -
+  | { type: "payment"; transactionId: string; amount: number } // raw positive payment amount
+  | { type: "none" };
+
+function classifyCardTransaction(t: Transaction): CardTransactionClassification {
+  if (t.kind === "NORMAL" && t.categoryId != null) {
+    return { type: "purchase", sourceCategoryId: t.categoryId, contribution: -t.amountCents };
+  }
+  if (t.kind === "TRANSFER" && t.amountCents > 0) {
+    return { type: "payment", transactionId: t.id, amount: t.amountCents };
+  }
+  return { type: "none" };
+}
+
+// One pass over all transactions building Map<month, Map<categoryId, netCents>>. Every
+// category gets its ordinary "sum of transactions tagged with this categoryId" contribution;
+// payment categories additionally get a derived contribution from their linked card's
+// transactions via classifyCardTransaction above.
 function buildActivityByMonth(
   transactions: Transaction[],
   accountIdToPaymentCategoryId: Map<string, string>
@@ -118,14 +148,9 @@ function buildActivityByMonth(
 
     const paymentCategoryId = accountIdToPaymentCategoryId.get(t.accountId);
     if (!paymentCategoryId) return;
-    if (t.kind === "NORMAL" && t.categoryId != null) {
-      // A covered purchase (amountCents negative) or its refund/return (amountCents positive)
-      // — signed negation nets correctly across both in the same month, unlike abs().
-      add(ym, paymentCategoryId, -t.amountCents);
-    } else if (t.kind === "TRANSFER" && t.amountCents > 0) {
-      // The destination leg of a payment landing on this card.
-      add(ym, paymentCategoryId, -t.amountCents);
-    }
+    const classification = classifyCardTransaction(t);
+    if (classification.type === "purchase") add(ym, paymentCategoryId, classification.contribution);
+    else if (classification.type === "payment") add(ym, paymentCategoryId, -classification.amount);
   });
 
   return byMonth;
@@ -159,10 +184,14 @@ export function computePaymentCategoryBreakdown(
 
   inputs.transactions.forEach((t) => {
     if (t.accountId !== category.linkedAccountId || monthKeyOf(t.date) !== month) return;
-    if (t.kind === "NORMAL" && t.categoryId != null) {
-      purchasesBySourceCategory.set(t.categoryId, (purchasesBySourceCategory.get(t.categoryId) || 0) - t.amountCents);
-    } else if (t.kind === "TRANSFER" && t.amountCents > 0) {
-      payments.push({ transactionId: t.id, amount: t.amountCents });
+    const classification = classifyCardTransaction(t);
+    if (classification.type === "purchase") {
+      purchasesBySourceCategory.set(
+        classification.sourceCategoryId,
+        (purchasesBySourceCategory.get(classification.sourceCategoryId) || 0) + classification.contribution
+      );
+    } else if (classification.type === "payment") {
+      payments.push({ transactionId: classification.transactionId, amount: classification.amount });
     }
   });
 
@@ -172,6 +201,14 @@ export function computePaymentCategoryBreakdown(
 
   return { categoryId, breakdown, payments };
 }
+
+// Display-ready shape for CatRow: sourceCategoryId resolved to a name, payments collapsed to a
+// count + total (CatRow doesn't need individual transactionIds, just the summary line).
+export type CatBreakdown = {
+  sources: { name: string; amount: number }[];
+  paymentsTotal: number;
+  paymentsCount: number;
+};
 
 export const PAYMENT_GROUP_NAME = "Credit Card Payments";
 
