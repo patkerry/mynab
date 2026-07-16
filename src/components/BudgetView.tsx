@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
@@ -40,6 +40,7 @@ export function BudgetView({
   budgetEntries: BudgetEntry[];
 }) {
   const { openModal } = useModal();
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const derived = useMemo(
     () => computeDerived({ accounts, categories, transactions, budgetEntries }, month),
     [accounts, categories, transactions, budgetEntries, month]
@@ -140,6 +141,12 @@ export function BudgetView({
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 40 }}>
           {groups.map((g) => {
             const cats = categories.filter((c) => c.groupId === g.id);
+            // Hiding is purely a display filter — group totals still include hidden categories
+            // (their money is real and still accounted for), only the individual rows are
+            // tucked behind the expand toggle below.
+            const visibleCats = cats.filter((c) => !c.isHidden);
+            const hiddenCats = cats.filter((c) => c.isHidden);
+            const isExpanded = expandedGroups[g.id] ?? false;
             const grpAssigned = cats.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
             const grpActivity = cats.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
             const grpAvail = cats.reduce((s, c) => s + derived.available(c.id, month), 0);
@@ -176,9 +183,32 @@ export function BudgetView({
                     {fmt(grpAvail)}
                   </span>
                 </div>
-                {cats.map((c) => (
+                {visibleCats.map((c) => (
                   <CatRow key={c.id} c={c} month={month} derived={derived} />
                 ))}
+                {hiddenCats.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setExpandedGroups((prev) => ({ ...prev, [g.id]: !isExpanded }))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--ink3)",
+                        width: "100%",
+                        textAlign: "left",
+                        borderBottom: isExpanded ? "1px solid var(--line)" : "none",
+                      }}
+                    >
+                      {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      {hiddenCats.length} hidden categor{hiddenCats.length > 1 ? "ies" : "y"}
+                    </button>
+                    {isExpanded && hiddenCats.map((c) => <CatRow key={c.id} c={c} month={month} derived={derived} />)}
+                  </>
+                )}
               </div>
             );
           })}

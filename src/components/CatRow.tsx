@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Target } from "lucide-react";
+import { Target, Eye, EyeOff } from "lucide-react";
 import { fmt, parseMoney } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
-import { setAssigned } from "@/app/budget/actions";
+import { setAssigned, setCategoryHidden } from "@/app/budget/actions";
 import { useModal } from "./modal/ModalContext";
 import type { Category } from "@/generated/prisma/client";
 
@@ -58,6 +58,7 @@ export function CatRow({
         padding: "10px 14px",
         alignItems: "center",
         borderBottom: "1px solid var(--line)",
+        opacity: c.isHidden ? 0.6 : 1,
       }}
     >
       <div style={{ minWidth: 0 }}>
@@ -81,6 +82,17 @@ export function CatRow({
           >
             <Target size={13} />
           </button>
+          {/* Payment categories keep their own always-visible section (see BudgetView) and
+              aren't hideable through this button. */}
+          {!c.linkedAccountId && (
+            <button
+              onClick={() => setCategoryHidden(c.id, !c.isHidden)}
+              title={c.isHidden ? "Unhide category" : "Hide category"}
+              style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
+            >
+              {c.isHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>
+          )}
         </div>
         {goalInfo && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>

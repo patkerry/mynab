@@ -84,3 +84,12 @@ export async function removeGoal(categoryId: string) {
   await prisma.category.update({ where: { id: categoryId }, data: { goalType: null, goalAmountCents: null } });
   revalidateAll();
 }
+
+// Purely a display toggle — doesn't touch budgetEntries, transactions, or goals, so hiding a
+// category (e.g. a one-off like "Concert" you don't need to see going forward) never affects
+// available()/Ready-to-Assign/reports. BudgetView filters hidden categories out of the main
+// list; they stay fully assignable/reportable, just not cluttering the everyday view.
+export async function setCategoryHidden(categoryId: string, hidden: boolean) {
+  await prisma.category.update({ where: { id: categoryId }, data: { isHidden: hidden } });
+  revalidateAll();
+}
