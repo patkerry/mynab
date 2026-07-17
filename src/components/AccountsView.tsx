@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, Trash2, ScrollText } from "lucide-react";
+import { Plus, X, Check, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo } from "@/app/accounts/actions";
+import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo, findPossibleDuplicate } from "@/app/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
@@ -13,6 +13,12 @@ import type { TxnDraft } from "@/lib/types";
 
 export function AccountsView({
   transactions,
+  totalCount,
+  page,
+  pageSize,
+  clearedCents,
+  unclearedCents,
+  pendingCount,
   accounts,
   categories,
   accountFilter,
@@ -20,6 +26,12 @@ export function AccountsView({
   lastReconciliation,
 }: {
   transactions: Transaction[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  clearedCents: number;
+  unclearedCents: number;
+  pendingCount: number;
   accounts: Account[];
   categories: Category[];
   accountFilter: string;
@@ -41,8 +53,11 @@ export function AccountsView({
   const setFilters = (next: { account?: string; category?: string }) => {
     const account = next.account ?? accountFilter;
     const category = next.category ?? categoryFilter;
-    router.push(`/accounts?account=${account}&category=${category}`);
+    // A page number carried over from a wider filter could be out of range for a narrower one —
+    // any filter change resets back to page 1.
+    router.push(`/accounts?account=${account}&category=${category}&page=1`);
   };
+  const goToPage = (p: number) => router.push(`/accounts?account=${accountFilter}&category=${categoryFilter}&page=${p}`);
 
   const txnToDraft = (t: Transaction): TxnDraft => ({
     date: t.date,
@@ -53,8 +68,7 @@ export function AccountsView({
     memo: t.memo || "",
   });
 
-  const cleared = transactions.filter((t) => t.cleared).reduce((s, t) => s + t.amountCents, 0);
-  const uncleared = transactions.filter((t) => !t.cleared).reduce((s, t) => s + t.amountCents, 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   // Never auto-clears and never partially reconciles — getReconcileInfo re-checks (ignoring
   // the current category filter, since `transactions` above may be a filtered subset) whether
@@ -68,6 +82,24 @@ export function AccountsView({
       return;
     }
     openModal({ type: "reconcile", accountId: accountFilter, accountName: account.name, currentBalanceCents: info.currentBalanceCents });
+  };
+
+  // Advisory-only: warns and lets the user confirm rather than silently blocking, since a
+  // second real transaction can legitimately look identical to an earlier one (see
+  // findPossibleDuplicate in accounts/actions.ts).
+  const handleAdd = async (draft: TxnDraft): Promise<boolean> => {
+    const dupe = await findPossibleDuplicate(draft);
+    if (dupe) {
+      const proceed = window.confirm(
+        `This looks like a duplicate of an existing transaction: "${dupe.payee}" on ${dateLabel(dupe.date)} for ${fmt(dupe.amountCents)}.\n\nAdd it anyway?`
+      );
+      if (!proceed) return false;
+    }
+    const ok = await addTransaction(draft);
+    // A newly-added transaction is almost always recent, so with the newest-first sort it would
+    // otherwise be invisible if the user is deep in an older page.
+    if (ok && page !== 1) goToPage(1);
+    return ok;
   };
 
   return (
@@ -109,14 +141,19 @@ export function AccountsView({
           )}
           <div style={{ display: "flex", gap: 16, fontSize: 12.5 }}>
             <span style={{ color: "var(--ink2)" }}>
-              Balance <b className="num" style={{ color: cleared + uncleared < 0 ? "var(--neg)" : "var(--ink)" }}>{fmt(cleared + uncleared)}</b>
+              Balance <b className="num" style={{ color: clearedCents + unclearedCents < 0 ? "var(--neg)" : "var(--ink)" }}>{fmt(clearedCents + unclearedCents)}</b>
             </span>
             <span style={{ color: "var(--ink2)" }}>
-              Cleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(cleared)}</b>
+              Cleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(clearedCents)}</b>
             </span>
             <span style={{ color: "var(--ink2)" }}>
-              Uncleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(uncleared)}</b>
+              Uncleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(unclearedCents)}</b>
             </span>
+            {pendingCount > 0 && (
+              <span style={{ color: "var(--warn)", fontWeight: 600 }}>
+                {pendingCount} pending — needs approval
+              </span>
+            )}
             {accountFilter !== "all" && (
               <span style={{ color: "var(--ink3)" }}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
             )}
@@ -128,6 +165,12 @@ export function AccountsView({
               <ScrollText size={15} /> Reconcile
             </button>
           )}
+          <button
+            className="btn btn-ghost"
+            onClick={() => openModal({ type: "import", accountId: accountFilter !== "all" ? accountFilter : accounts[0]?.id || "", accounts })}
+          >
+            <Upload size={15} /> Import CSV
+          </button>
           <button
             className="btn btn-primary"
             onClick={() => {
@@ -163,7 +206,7 @@ export function AccountsView({
               amount: "",
               memo: "",
             }}
-            onSubmit={addTransaction}
+            onSubmit={handleAdd}
             onClose={() => setAdding(false)}
           />
         )}
@@ -209,10 +252,17 @@ export function AccountsView({
                 cursor: transfer ? "default" : "pointer",
               }}
             >
-              <span className="num" style={{ color: "var(--ink2)" }}>
-                {t.date.slice(5)}
+              <span className="num" style={{ color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                {dateLabel(t.date)}
               </span>
-              <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.payee}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.payee}</span>
+                {t.pending && (
+                  <span className="pill num" style={{ color: "var(--warn)", background: "var(--warnSoft)", fontSize: 10, flexShrink: 0 }} title="Imported, not yet approved — click to review">
+                    Pending
+                  </span>
+                )}
+              </span>
               <span style={{ color: "var(--ink2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{catName(t)}</span>
               <span style={{ color: "var(--ink3)", fontSize: 12.5, fontStyle: t.memo ? "italic" : "normal", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {t.memo || "—"}
@@ -248,6 +298,25 @@ export function AccountsView({
           );
         })}
       </div>
+
+      {totalCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
+          <span style={{ color: "var(--ink3)" }}>
+            Showing {Math.min((page - 1) * pageSize + 1, totalCount)}-{Math.min(page * pageSize, totalCount)} of {totalCount}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => goToPage(page - 1)} disabled={page <= 1}>
+              <ChevronLeft size={14} />
+            </button>
+            <span style={{ color: "var(--ink2)" }}>
+              Page {page} of {totalPages}
+            </span>
+            <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => goToPage(page + 1)} disabled={page >= totalPages}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

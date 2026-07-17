@@ -11,3 +11,7 @@ export type TxnDraft = {
   amount: string; // dollars, as typed by the user
   memo: string;
 };
+
+export type ImportResult =
+  | { ok: true; imported: number; duplicates: number; skipped: number }
+  | { ok: false; reason: string };

@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
 import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
+import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
+import { isQfx, parseQfx } from "@/lib/qfx";
 import type { Prisma, AccountType } from "@/generated/prisma/client";
-import type { TxnDraft } from "@/lib/types";
+import type { TxnDraft, ImportResult } from "@/lib/types";
 
 function revalidateAll() {
   revalidatePath("/", "layout");
@@ -36,7 +38,7 @@ async function applyOverspendCoverage(tx: Prisma.TransactionClient, accountId: s
   const [accounts, categories, transactions, budgetEntries] = await Promise.all([
     tx.account.findMany(),
     tx.category.findMany(),
-    tx.transaction.findMany(),
+    tx.transaction.findMany({ where: { deletedAt: null } }),
     tx.budgetEntry.findMany(),
   ]);
   const month = monthKeyOf(date);
@@ -48,6 +50,27 @@ async function applyOverspendCoverage(tx: Prisma.TransactionClient, accountId: s
     update: { amountCents: { increment: coverage } },
     create: { categoryId, yearMonth: month, amountCents: coverage },
   });
+}
+
+export type PossibleDuplicate = { date: string; payee: string; amountCents: number };
+
+// Advisory-only check, called by the "Add transaction" UI before it saves — never blocks by
+// itself, just gives the caller enough to warn the user with a confirm/override. Scoped to
+// same account + date + payee (case-insensitive) + signed amount; transfers are skipped since
+// their payee ("Transfer to X") is synthesized, not user-typed, and two legitimate transfers
+// between the same accounts on the same day for the same amount is a real, unremarkable case.
+export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDuplicate | null> {
+  if (draft.categoryId.startsWith("transfer:")) return null;
+  const cents = parseMoney(draft.amount);
+  if (!cents || !draft.accountId) return null;
+  const isIncome = draft.categoryId === "income";
+  const amountCents = isIncome ? cents : -cents;
+  const payee = draft.payee.trim() || (isIncome ? "Income" : "Payee");
+
+  const existing = await prisma.transaction.findFirst({
+    where: { accountId: draft.accountId, date: draft.date, payee: { equals: payee, mode: "insensitive" }, amountCents, deletedAt: null },
+  });
+  return existing ? { date: existing.date, payee: existing.payee, amountCents: existing.amountCents } : null;
 }
 
 // Ports addTxn (ynab-clone.jsx lines 575-596): categoryId is "transfer:<accountId>",
@@ -155,6 +178,9 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
         categoryId: null,
         amountCents: cents,
         payee: draft.payee.trim() || "Income",
+        // Saving an edit is how a file-imported (pending) row gets reviewed — this save IS
+        // the approval. A no-op for already-approved transactions.
+        pending: false,
       },
     });
   } else {
@@ -171,6 +197,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           categoryId,
           amountCents: -cents,
           payee: draft.payee.trim() || "Payee",
+          pending: false,
         },
       });
       await applyOverspendCoverage(tx, draft.accountId, categoryId, draft.date);
@@ -192,6 +219,9 @@ export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
   if (!t) return { ok: false, reason: "Transaction not found." };
 
   const willClear = !t.cleared;
+  if (willClear && t.pending) {
+    return { ok: false, reason: "Approve this imported transaction before marking it cleared." };
+  }
   if (willClear && t.kind === "NORMAL" && t.categoryId === null) {
     return { ok: false, reason: "Add a category before marking this transaction cleared." };
   }
@@ -201,26 +231,35 @@ export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
   return { ok: true };
 }
 
-// Reconciliation is only permitted once every transaction on the account is cleared — no
-// auto-clearing on our side, and no partial reconciliation. The user has to manually clear
-// (or delete) everything uncleared first; shared by getReconcileInfo (the pre-check that gates
-// opening the modal) and reconcileAccount (which re-checks server-side rather than trusting
-// that nothing changed between opening the modal and saving it).
+// Reconciliation is only permitted once every transaction on the account is cleared and
+// approved — no auto-clearing on our side, and no partial reconciliation. The user has to
+// manually clear (or delete) everything uncleared, and review every pending (file-imported)
+// row, first; shared by getReconcileInfo (the pre-check that gates opening the modal) and
+// reconcileAccount (which re-checks server-side rather than trusting that nothing changed
+// between opening the modal and saving it).
 async function reconcileEligibility(accountId: string) {
-  const transactions = await prisma.transaction.findMany({ where: { accountId } });
+  const transactions = await prisma.transaction.findMany({ where: { accountId, deletedAt: null } });
   const unclearedCount = transactions.filter((t) => !t.cleared).length;
-  return { transactions, unclearedCount };
+  const pendingCount = transactions.filter((t) => t.pending).length;
+  return { transactions, unclearedCount, pendingCount };
 }
 
-function unclearedReason(unclearedCount: number): string {
-  return `Clear every transaction before reconciling — ${unclearedCount} transaction${unclearedCount > 1 ? "s are" : " is"} still uncleared.`;
+function blockingReason(unclearedCount: number, pendingCount: number): string | null {
+  if (pendingCount > 0) {
+    return `Approve every imported transaction before reconciling — ${pendingCount} pending.`;
+  }
+  if (unclearedCount > 0) {
+    return `Clear every transaction before reconciling — ${unclearedCount} transaction${unclearedCount > 1 ? "s are" : " is"} still uncleared.`;
+  }
+  return null;
 }
 
 export type ReconcileCheck = { ok: true; currentBalanceCents: number } | { ok: false; reason: string };
 
 export async function getReconcileInfo(accountId: string): Promise<ReconcileCheck> {
-  const { transactions, unclearedCount } = await reconcileEligibility(accountId);
-  if (unclearedCount > 0) return { ok: false, reason: unclearedReason(unclearedCount) };
+  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(accountId);
+  const reason = blockingReason(unclearedCount, pendingCount);
+  if (reason) return { ok: false, reason };
   return { ok: true, currentBalanceCents: transactions.reduce((s, t) => s + t.amountCents, 0) };
 }
 
@@ -235,8 +274,9 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) return { ok: false, reason: "Account not found." };
 
-  const { transactions, unclearedCount } = await reconcileEligibility(accountId);
-  if (unclearedCount > 0) return { ok: false, reason: unclearedReason(unclearedCount) };
+  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(accountId);
+  const reason = blockingReason(unclearedCount, pendingCount);
+  if (reason) return { ok: false, reason };
 
   const currentBalanceCents = transactions.reduce((s, t) => s + t.amountCents, 0);
   const actualCents = parseMoney(actualBalance);
@@ -273,12 +313,16 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
   return { ok: true, adjustmentCents: diff };
 }
 
-// Ports del (ynab-clone.jsx lines 556-560) — deletes both legs of a transfer together.
+// Ports del (ynab-clone.jsx lines 556-560) — deletes both legs of a transfer together. Soft
+// delete (sets deletedAt rather than removing the row) so a transaction's externalId — if it
+// came from a QFX import — keeps blocking re-import of that same bank transaction forever,
+// rather than the delete freeing it up to silently reappear on the next overlapping import.
 export async function deleteTransaction(id: string) {
   const t = await prisma.transaction.findUnique({ where: { id } });
   if (!t) return;
-  if (t.transferId) await prisma.transaction.deleteMany({ where: { transferId: t.transferId } });
-  else await prisma.transaction.delete({ where: { id } });
+  const deletedAt = new Date();
+  if (t.transferId) await prisma.transaction.updateMany({ where: { transferId: t.transferId }, data: { deletedAt } });
+  else await prisma.transaction.update({ where: { id }, data: { deletedAt } });
   revalidateAll();
 }
 
@@ -324,4 +368,99 @@ export async function addAccount(input: { name: string; type: AccountType; balan
     }
   });
   revalidateAll();
+}
+
+const REQUIRED_IMPORT_HEADERS = ["date", "payee", "amount"];
+
+type ImportRow = { date: string; payee: string; memo: string; amountCents: number; externalId: string | null };
+
+// Generic CSV (Date, Payee, Amount, Memo — no account column, one file per account). Every row
+// gets a synthesized fingerprint as its externalId (see csvFingerprint in src/lib/csv.ts) so
+// re-importing an overlapping export doesn't re-insert rows already present.
+function parseCsvImport(csvText: string): { rows: ImportRow[]; skipped: number } | { error: string } {
+  const rows = parseCsv(csvText);
+  if (rows.length === 0) return { error: "The file is empty." };
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const colIndex = (name: string) => header.indexOf(name);
+  const missing = REQUIRED_IMPORT_HEADERS.filter((h) => colIndex(h) === -1);
+  if (missing.length > 0) {
+    return { error: `Missing required column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.` };
+  }
+  const dateCol = colIndex("date");
+  const payeeCol = colIndex("payee");
+  const amountCol = colIndex("amount");
+  const memoCol = colIndex("memo");
+
+  const parsed: ImportRow[] = [];
+  let skipped = 0;
+  for (const raw of rows.slice(1)) {
+    const date = normalizeDate(raw[dateCol] || "");
+    const amountCents = parseMoney(raw[amountCol] || "");
+    if (!date || !amountCents) {
+      skipped++;
+      continue;
+    }
+    const payee = (raw[payeeCol] || "").trim() || "Payee";
+    const memo = memoCol === -1 ? "" : (raw[memoCol] || "").trim();
+    parsed.push({ date, payee, memo, amountCents, externalId: csvFingerprint(date, payee, amountCents, memo) });
+  }
+  return { rows: parsed, skipped };
+}
+
+// Generic CSV or QFX/OFX (Quicken) import — format is detected from the file's own content
+// (see isQfx in src/lib/qfx.ts), not its extension. Every row lands as pending: uncategorized,
+// unapproved, and uncleared, but its amount is already reflected in the account's balance (see
+// the `pending` field's doc comment in schema.prisma). A user reviews and approves each one
+// individually by opening and saving it in the register — the same edit flow every other
+// transaction uses (see updateTransaction).
+//
+// QFX rows carry the bank's own FITID as externalId; CSV rows carry a synthesized content
+// fingerprint (csvFingerprint in src/lib/csv.ts). Either way, inserting with
+// skipDuplicates: true means re-importing a file with an overlapping date range — the normal
+// way both banks and Quicken let you export — is a no-op for rows already present, instead of
+// creating duplicate pending transactions.
+export async function importTransactions(accountId: string, fileText: string): Promise<ImportResult> {
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) return { ok: false, reason: "Account not found." };
+
+  let parsed: ImportRow[];
+  let skipped: number;
+  if (isQfx(fileText)) {
+    const result = parseQfx(fileText);
+    if (result.rows.length === 0) return { ok: false, reason: "No transactions found in this QFX file." };
+    parsed = result.rows;
+    skipped = result.skipped;
+  } else {
+    const result = parseCsvImport(fileText);
+    if ("error" in result) return { ok: false, reason: result.error };
+    parsed = result.rows;
+    skipped = result.skipped;
+  }
+  if (parsed.length === 0) return { ok: false, reason: "No valid rows found in the file." };
+
+  const CHUNK = 500;
+  let importedCount = 0;
+  for (let i = 0; i < parsed.length; i += CHUNK) {
+    const chunk = parsed.slice(i, i + CHUNK);
+    const result = await prisma.transaction.createMany({
+      data: chunk.map((r) => ({
+        accountId,
+        date: r.date,
+        payee: r.payee,
+        memo: r.memo,
+        kind: "NORMAL" as const,
+        categoryId: null,
+        amountCents: r.amountCents,
+        cleared: false,
+        pending: true,
+        externalId: r.externalId,
+      })),
+      skipDuplicates: true,
+    });
+    importedCount += result.count;
+  }
+
+  revalidateAll();
+  return { ok: true, imported: importedCount, duplicates: parsed.length - importedCount, skipped };
 }

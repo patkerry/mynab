@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { Category } from "@/generated/prisma/client";
+import type { Account, Category } from "@/generated/prisma/client";
 import { ModalHost } from "./ModalHost";
 
 export type ModalState =
@@ -11,6 +11,7 @@ export type ModalState =
   | { type: "goal"; cat: Category }
   | { type: "reset" }
   | { type: "reconcile"; accountId: string; accountName: string; currentBalanceCents: number }
+  | { type: "import"; accountId: string; accounts: Account[] }
   | null;
 
 type ModalContextValue = {

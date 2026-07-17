@@ -7,6 +7,7 @@ import { CategoryModal } from "./CategoryModal";
 import { GoalModal } from "./GoalModal";
 import { ResetModal } from "./ResetModal";
 import { ReconcileModal } from "./ReconcileModal";
+import { ImportModal } from "./ImportModal";
 
 export function ModalHost({ modal, close }: { modal: NonNullable<ModalState>; close: () => void }) {
   return (
@@ -20,6 +21,7 @@ export function ModalHost({ modal, close }: { modal: NonNullable<ModalState>; cl
         {modal.type === "reconcile" && (
           <ReconcileModal close={close} accountId={modal.accountId} accountName={modal.accountName} currentBalanceCents={modal.currentBalanceCents} />
         )}
+        {modal.type === "import" && <ImportModal close={close} accountId={modal.accountId} accounts={modal.accounts} />}
       </div>
     </div>
   );

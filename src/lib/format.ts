@@ -39,4 +39,4 @@ export function curYM() {
 }
 
 // shared column template for the register header / rows / editor
-export const TXN_GRID = "84px 1.1fr 120px 1fr 120px 104px 56px";
+export const TXN_GRID = "128px 1.1fr 120px 1fr 120px 104px 56px";
