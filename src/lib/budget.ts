@@ -76,7 +76,9 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   const activityUpTo = (catId: string, ym: string) => cumulativeUpTo(activityByMonth, catId, ym);
   const available = (catId: string, ym: string) => assignedUpTo(catId, ym) + activityUpTo(catId, ym);
 
-  const totalIncome = transactions.filter((t) => t.kind === "INCOME").reduce((s, t) => s + t.amountCents, 0);
+  const totalIncome = transactions
+    .filter((t) => t.kind === "INCOME" && !t.pending)
+    .reduce((s, t) => s + t.amountCents, 0);
   const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
   const readyToAssign = totalIncome - totalAssigned;
 
@@ -183,6 +185,10 @@ function buildActivityByMonth(
   const transferPair = buildTransferPairLookup(transactions);
 
   transactions.forEach((t) => {
+    // Pending (not-yet-approved, file-imported) transactions count toward acctBalance/netWorth
+    // (unfiltered above) but stay invisible to every category/activity computation until a
+    // human reviews and approves them — see the `pending` field's doc comment in schema.prisma.
+    if (t.pending) return;
     const ym = monthKeyOf(t.date);
     if (t.categoryId) add(ym, t.categoryId, t.amountCents);
 
@@ -233,7 +239,7 @@ export function computePaymentCategoryBreakdown(
   });
 
   inputs.transactions.forEach((t) => {
-    if (t.accountId !== category.linkedAccountId || monthKeyOf(t.date) !== month) return;
+    if (t.pending || t.accountId !== category.linkedAccountId || monthKeyOf(t.date) !== month) return;
     const classification = classifyCardTransaction(t, transferPair, accountIdToPaymentCategoryId);
     if (classification.type === "purchase") {
       purchasesBySourceCategory.set(

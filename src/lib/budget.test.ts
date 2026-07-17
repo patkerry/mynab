@@ -28,6 +28,7 @@ function txn(
     memo: "",
     categoryId: null,
     cleared: true,
+    pending: false,
     transferId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -368,5 +369,74 @@ describe("overspend coverage (credit-card overspending auto-covered from Ready-t
 
     expect(computeDerived(inputs, MONTH).readyToAssign).toBe(0);
     expect(computeOverspendCoverage(inputs, "c_groc", MONTH)).toBe(0);
+  });
+});
+
+describe("pending (file-imported, not-yet-approved) transactions", () => {
+  it("count toward acctBalance/netWorth but not toward category activity/available", () => {
+    const before = computeDerived(baseInputs(), MONTH);
+    const pendingPurchase = txn({
+      id: "t1",
+      accountId: "a_check",
+      date: `${MONTH}-05`,
+      kind: "NORMAL",
+      categoryId: "c_groc",
+      amountCents: -5000,
+      pending: true,
+    });
+    const after = computeDerived(baseInputs([pendingPurchase]), MONTH);
+
+    expect(after.acctBalance["a_check"]).toBe(before.acctBalance["a_check"] - 5000);
+    expect(after.netWorth).toBe(before.netWorth - 5000);
+    expect(after.available("c_groc", MONTH)).toBe(before.available("c_groc", MONTH)); // untouched until approved
+    expect(after.activityIn("c_groc", MONTH)).toBe(0);
+  });
+
+  it("a pending purchase on a credit card doesn't move anything into its payment category either", () => {
+    const pendingPurchase = txn({
+      id: "t1",
+      accountId: "a_card",
+      date: `${MONTH}-05`,
+      kind: "NORMAL",
+      categoryId: "c_groc",
+      amountCents: -5000,
+      pending: true,
+    });
+    const derived = computeDerived(baseInputs([pendingPurchase]), MONTH);
+
+    expect(derived.available("c_pay", MONTH)).toBe(0);
+    expect(derived.acctBalance["a_card"]).toBe(-5000); // balance still reflects it
+  });
+
+  it("excludes a pending INCOME transaction from totalIncome/readyToAssign", () => {
+    const before = computeDerived(baseInputs(), MONTH);
+    const pendingIncome = txn({ id: "t1", accountId: "a_check", date: `${MONTH}-05`, kind: "INCOME", amountCents: 100000, pending: true });
+    const after = computeDerived(baseInputs([pendingIncome]), MONTH);
+
+    expect(after.totalIncome).toBe(before.totalIncome);
+    expect(after.readyToAssign).toBe(before.readyToAssign);
+    expect(after.acctBalance["a_check"]).toBe(before.acctBalance["a_check"] + 100000); // still lands in balance
+  });
+
+  it("is excluded from computePaymentCategoryBreakdown, and the reconciliation identity still holds", () => {
+    const approvedPurchase = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_groc", amountCents: -5000 });
+    const pendingPurchase = txn({
+      id: "t2",
+      accountId: "a_card",
+      date: `${MONTH}-10`,
+      kind: "NORMAL",
+      categoryId: "c_dine",
+      amountCents: -1500,
+      pending: true,
+    });
+    const inputs = baseInputs([approvedPurchase, pendingPurchase]);
+
+    const derived = computeDerived(inputs, MONTH);
+    const result = computePaymentCategoryBreakdown(inputs, "c_pay", MONTH)!;
+
+    expect(result.breakdown).toEqual([{ sourceCategoryId: "c_groc", amount: 5000 }]); // pending one excluded
+    const breakdownSum = result.breakdown.reduce((s, b) => s + b.amount, 0);
+    const paymentsSum = result.payments.reduce((s, p) => s + p.amount, 0);
+    expect(breakdownSum - paymentsSum).toBe(derived.activityIn("c_pay", MONTH));
   });
 });
