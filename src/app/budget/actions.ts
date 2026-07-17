@@ -28,7 +28,7 @@ export async function autoAssignGoals(month: string) {
   const [accounts, categories, transactions, budgetEntries] = await Promise.all([
     prisma.account.findMany(),
     prisma.category.findMany(),
-    prisma.transaction.findMany(),
+    prisma.transaction.findMany({ where: { deletedAt: null } }),
     prisma.budgetEntry.findMany(),
   ]);
   const updates = computeAutoAssignAllocations({ accounts, categories, transactions, budgetEntries }, month);
@@ -91,5 +91,13 @@ export async function removeGoal(categoryId: string) {
 // list; they stay fully assignable/reportable, just not cluttering the everyday view.
 export async function setCategoryHidden(categoryId: string, hidden: boolean) {
   await prisma.category.update({ where: { id: categoryId }, data: { isHidden: hidden } });
+  revalidateAll();
+}
+
+// "Hide a group" is just "hide every category in it" — reuses the exact same isHidden field and
+// collapse UI a single category already has (see BudgetView's "N hidden categories" toggle), so
+// no new schema or display logic is needed. Same display-only guarantee as setCategoryHidden.
+export async function setGroupHidden(groupId: string, hidden: boolean) {
+  await prisma.category.updateMany({ where: { groupId }, data: { isHidden: hidden } });
   revalidateAll();
 }

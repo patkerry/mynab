@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
-import { autoAssignGoals } from "@/app/budget/actions";
+import { autoAssignGoals, setGroupHidden } from "@/app/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma/client";
 
@@ -172,6 +172,15 @@ export function BudgetView({
                     >
                       <Plus size={15} />
                     </button>
+                    {cats.length > 0 && (
+                      <button
+                        onClick={() => setGroupHidden(g.id, hiddenCats.length !== cats.length)}
+                        title={hiddenCats.length === cats.length ? "Unhide group" : "Hide group"}
+                        style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
+                      >
+                        {hiddenCats.length === cats.length ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
+                    )}
                   </div>
                   <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
                     {fmt(grpAssigned)}
