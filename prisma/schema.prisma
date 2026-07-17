@@ -105,11 +105,26 @@ model Transaction {
   category       Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   amountCents    Int // signed cents; positive = inflow, negative = outflow
   cleared        Boolean         @default(false)
+  // True until a file-imported row is reviewed/approved. Excluded from category
+  // activity/available and totalIncome (see buildActivityByMonth/computeDerived in
+  // src/lib/budget.ts) but still counted in acctBalance/netWorth — the money already moved in
+  // real life, it just hasn't been assigned a job yet. Saving any edit (see updateTransaction
+  // in accounts/actions.ts) clears it — that save IS the approval, no separate action needed.
+  pending        Boolean         @default(false)
+  // Bank-assigned FITID from a QFX/OFX import; null for CSV/manual entries. Unique per account
+  // so re-importing an overlapping QFX file is a no-op for rows already present (see
+  // importTransactions in accounts/actions.ts, which inserts with skipDuplicates: true).
+  externalId     String?
   transferId     String? // shared by both legs of a transfer
+  // Set instead of a real delete (see deleteTransaction in accounts/actions.ts) — keeps the
+  // row's externalId occupied so a later overlapping QFX import can't silently resurrect
+  // something the user deliberately removed. Every read path filters deletedAt: null.
+  deletedAt      DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   reconciliation Reconciliation? // set if this transaction is the adjustment a reconciliation produced
 
+  @@unique([accountId, externalId])
   @@index([accountId, date])
   @@index([categoryId, date])
   @@index([kind])
