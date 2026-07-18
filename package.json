@@ -15,7 +15,7 @@
     "electron:prepare": "ELECTRON_BUILD=1 next build && node scripts/prepare-standalone.mjs",
     "electron:rebuild-native": "electron-rebuild -f -w better-sqlite3 && node scripts/sync-standalone-native.mjs",
     "electron:dev": "npm run electron:prepare && npm run electron:rebuild-native && electron .",
-    "electron:pack": "npm run electron:prepare && electron-builder",
+    "electron:pack": "npm run electron:prepare && npm run electron:rebuild-native && electron-builder",
     "electron:pack:win": "npm run electron:prepare && electron-builder --win --x64"
   },
   "dependencies": {
@@ -52,6 +52,7 @@
     "directories": {
       "output": "dist-electron"
     },
+    "npmRebuild": false,
     "files": [
       "electron/**/*",
       "node_modules/better-sqlite3/**/*",
@@ -83,5 +84,16 @@
     "linux": {
       "target": "AppImage"
     }
+  },
+  "allowScripts": {
+    "@prisma/engines@7.8.0": true,
+    "better-sqlite3@12.11.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "prisma@7.8.0": true,
+    "sharp@0.34.5": true,
+    "unrs-resolver@1.12.2": true,
+    "electron@42.7.0": true
   }
 }
