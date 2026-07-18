@@ -144,6 +144,10 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
     const categoryId = draft.categoryId || null;
+    // A manually-added transaction is created already-approved (pending: false), so hold it to the
+    // same rule as approving an import (see updateTransaction): a NORMAL transaction needs a
+    // category. INCOME/TRANSFER take the branches above and are exempt.
+    if (categoryId === null) return false;
     await prisma.$transaction(async (tx) => {
       await tx.transaction.create({
         data: {
@@ -191,6 +195,12 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
     const categoryId = draft.categoryId || null;
+    // Saving is how a pending import gets approved (pending -> false), so a NORMAL transaction
+    // must have a category to be saved: approving an uncategorized purchase would leave money
+    // that never shows up against any budget category. INCOME/TRANSFER take the branches above
+    // and are intentionally categoryId: null, so they're unaffected. Mirrors the same rule the
+    // uncleared->cleared gate enforces in toggleCleared.
+    if (categoryId === null) return false;
     await prisma.$transaction(async (tx) => {
       await tx.transaction.update({
         where: { id },

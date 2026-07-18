@@ -58,6 +58,15 @@ export function TxnEditorRow({
       setTimeout(() => setErr(false), 1200);
       return;
     }
+    // A NORMAL transaction needs a category to be saved/approved — enforced server-side in
+    // addTransaction/updateTransaction too; checked here so the user gets an immediate, specific
+    // reason instead of a generic error border after a round-trip. Income and transfers are exempt.
+    if (!isIncome && !isTransfer && categoryId === "") {
+      showToast("Add a category before approving this transaction.");
+      setErr(true);
+      setTimeout(() => setErr(false), 1200);
+      return;
+    }
     const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo });
     if (ok) onClose();
     else {
