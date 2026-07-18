@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next.stale-*/
 /out/
 
 # production
@@ -51,3 +52,6 @@ next-env.d.ts
 
 # electron-builder packaging output
 /dist-electron
+
+# personal Claude Code overrides
+/.claude/settings.local.json
