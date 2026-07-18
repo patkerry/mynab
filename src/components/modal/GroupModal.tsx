@@ -14,9 +14,9 @@ export function GroupModal({ close }: { close: () => void }) {
   };
 
   return (
-    <ModalShell title="New category group" close={close} onSave={save} saveLabel="Add group">
+    <ModalShell title="New category group" close={close} onSave={save} saveLabel="Add category group">
       <div className="field">
-        <label>Group name</label>
+        <label>Category group name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Subscriptions" autoFocus />
       </div>
     </ModalShell>

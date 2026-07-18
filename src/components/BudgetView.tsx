@@ -88,7 +88,7 @@ export function BudgetView({
             <Sparkles size={15} /> Auto-assign goals
           </button>
           <button className="btn btn-ghost" onClick={() => openModal({ type: "group" })}>
-            <Plus size={15} /> Group
+            <Plus size={15} /> Category group
           </button>
         </div>
       </div>
@@ -175,7 +175,7 @@ export function BudgetView({
                     {cats.length > 0 && (
                       <button
                         onClick={() => setGroupHidden(g.id, hiddenCats.length !== cats.length)}
-                        title={hiddenCats.length === cats.length ? "Unhide group" : "Hide group"}
+                        title={hiddenCats.length === cats.length ? "Unhide category group" : "Hide category group"}
                         style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
                       >
                         {hiddenCats.length === cats.length ? <Eye size={13} /> : <EyeOff size={13} />}
