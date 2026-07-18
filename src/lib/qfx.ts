@@ -1,4 +1,5 @@
 import { parseMoney } from "./format";
+import { bestMerchant, isGenericBankPayee } from "./merchant";
 
 // OFX 1.x (the common QFX variant produced by Quicken/bank downloads) is SGML, not XML — leaf
 // tags like <TRNTYPE>DEBIT are frequently left unclosed, terminated only by a newline or the
@@ -44,8 +45,13 @@ export function parseQfx(text: string): { rows: QfxRow[]; skipped: number } {
       skipped++;
       continue;
     }
-    const payee = extractTag(block, "NAME") || extractTag(block, "PAYEE") || "Payee";
-    const memo = extractTag(block, "MEMO") || "";
+    const rawName = extractTag(block, "NAME") || extractTag(block, "PAYEE") || "Payee";
+    const rawMemo = extractTag(block, "MEMO") || "";
+    // Canadian banks (RBC) put boilerplate in NAME ("Visa Debit purchase - 4581") and the real
+    // merchant in MEMO ("GIANT TIGER #17"). Promote the merchant to the payee so the register is
+    // readable and category-guessing has a clean key; keep the original type note in the memo.
+    const payee = bestMerchant(rawName, rawMemo);
+    const memo = rawMemo && isGenericBankPayee(rawName) ? rawName : rawMemo;
     const externalId = extractTag(block, "FITID");
     rows.push({ date, payee, memo, amountCents, externalId });
   }

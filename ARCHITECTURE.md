@@ -93,6 +93,20 @@ Every imported row lands `pending: true`. `findPossibleDuplicate` gives an advis
 blocking) warning when *manually* adding a transaction that looks like an existing one — native
 `confirm()`, user can always override.
 
+**Merchant extraction + category guessing (`src/lib/merchant.ts`)**: Canadian banks (RBC) put
+boilerplate in the OFX `<NAME>` ("Visa Debit purchase - 4581") and the real merchant in `<MEMO>`
+("GIANT TIGER #17"). `parseQfx` promotes the memo to the payee when the name is generic bank
+boilerplate (`isGenericBankPayee`), keeping the original type note in the memo — so the register
+is readable and matching has a clean key. On import, `importTransactions` guesses a category for
+each pending row (outflows only — a positive amount is income/refund) from **the user's own
+history** (`buildHistoryMap`: every already-categorized transaction, majority-voted per
+normalized merchant) with a static `KNOWN_MERCHANTS` seed as fallback. The guess is a
+*suggestion*: the row stays `pending`, so it never counts against a budget until approved, and
+each approval becomes training data for the next import (no separate rules table — history IS the
+model). Deliberately chose this over a persistent `MerchantRule` table to avoid a schema
+migration against live desktop DBs (and the Electron migrate-only-on-fresh-DB gap in
+`electron/main.js`).
+
 ## Reconciliation
 
 No auto-clearing, ever. `reconcileEligibility` blocks (in this order) on any `pending` row first,

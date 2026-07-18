@@ -6,6 +6,7 @@ import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
 import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
 import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
 import { isQfx, parseQfx } from "@/lib/qfx";
+import { buildHistoryMap, guessCategoryId, KNOWN_MERCHANTS } from "@/lib/merchant";
 import type { Prisma, AccountType } from "@/generated/prisma-postgres/client";
 import type { TxnDraft, ImportResult } from "@/lib/types";
 
@@ -473,27 +474,49 @@ export async function importTransactions(accountId: string, fileText: string): P
     return true;
   });
 
+  // Guess a category for each imported (still-pending) row from the user's own history plus a
+  // static seed of common merchants — a *suggestion* only: the row stays pending, so the guess
+  // never counts against a budget until the user reviews and approves it (see updateTransaction).
+  // History = every already-categorized transaction (all accounts), majority-voted per merchant.
+  const categorized = await prisma.transaction.findMany({
+    where: { deletedAt: null, kind: "NORMAL", categoryId: { not: null } },
+    select: { payee: true, memo: true, categoryId: true },
+  });
+  const history = buildHistoryMap(categorized);
+  // Resolve the KNOWN_MERCHANTS name->category seed to this DB's category ids (skip a payment
+  // category or a name the user doesn't have). Non-payment categories only — a card's payment
+  // category is never a transaction's own categoryId (see isPaymentCategory).
+  const cats = await prisma.category.findMany({ where: { linkedAccountId: null }, select: { id: true, name: true } });
+  const idByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
+  const seed = KNOWN_MERCHANTS.map((k) => ({ match: k.match, categoryId: idByName.get(k.category.toLowerCase()) }))
+    .filter((s): s is { match: string; categoryId: string } => Boolean(s.categoryId));
+
   const CHUNK = 500;
   let importedCount = 0;
+  let guessedCount = 0;
   for (let i = 0; i < toInsert.length; i += CHUNK) {
     const chunk = toInsert.slice(i, i + CHUNK);
     const result = await prisma.transaction.createMany({
-      data: chunk.map((r) => ({
-        accountId,
-        date: r.date,
-        payee: r.payee,
-        memo: r.memo,
-        kind: "NORMAL" as const,
-        categoryId: null,
-        amountCents: r.amountCents,
-        cleared: false,
-        pending: true,
-        externalId: r.externalId,
-      })),
+      data: chunk.map((r) => {
+        const categoryId = guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
+        if (categoryId) guessedCount++;
+        return {
+          accountId,
+          date: r.date,
+          payee: r.payee,
+          memo: r.memo,
+          kind: "NORMAL" as const,
+          categoryId,
+          amountCents: r.amountCents,
+          cleared: false,
+          pending: true,
+          externalId: r.externalId,
+        };
+      }),
     });
     importedCount += result.count;
   }
 
   revalidateAll();
-  return { ok: true, imported: importedCount, duplicates: parsed.length - importedCount, skipped };
+  return { ok: true, imported: importedCount, duplicates: parsed.length - importedCount, skipped, guessed: guessedCount };
 }

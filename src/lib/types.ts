@@ -13,5 +13,5 @@ export type TxnDraft = {
 };
 
 export type ImportResult =
-  | { ok: true; imported: number; duplicates: number; skipped: number }
+  | { ok: true; imported: number; duplicates: number; skipped: number; guessed: number }
   | { ok: false; reason: string };

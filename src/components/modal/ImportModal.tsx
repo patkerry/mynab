@@ -36,6 +36,7 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       return;
     }
     const notes = [
+      result.guessed > 0 ? `${result.guessed} pre-categorized from history` : null,
       result.duplicates > 0 ? `${result.duplicates} duplicate${result.duplicates === 1 ? "" : "s"} already present` : null,
       result.skipped > 0 ? `${result.skipped} row${result.skipped === 1 ? "" : "s"} skipped` : null,
     ].filter(Boolean);
