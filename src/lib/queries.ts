@@ -37,16 +37,18 @@ export async function getBudgetPageData() {
 
 export const ACCOUNT_TXNS_PAGE_SIZE = 50;
 
-// "none" (Uncategorized) must match categoryId === null while excluding INCOME — INCOME rows
-// also carry categoryId: null (it replaces the original "income" sentinel string), so a plain
-// `categoryId: null` filter would incorrectly pull income rows into "Uncategorized".
+// "none" (Uncategorized) must match categoryId === null but only for NORMAL transactions —
+// INCOME and TRANSFER rows also carry categoryId: null intentionally (INCOME replaces the
+// original "income" sentinel; TRANSFER legs are never categorized), so a plain `categoryId: null`
+// filter would wrongly pull income and transfers into "Uncategorized". Only a NORMAL row with no
+// category is genuinely uncategorized.
 export async function getAccountTransactions(filters: { accountId: AccountFilter; categoryId: CategoryFilter; page: number }) {
   const where: Prisma.TransactionWhereInput = { deletedAt: null };
   if (filters.accountId !== "all") where.accountId = filters.accountId;
   if (filters.categoryId === "income") where.kind = "INCOME";
   else if (filters.categoryId === "none") {
     where.categoryId = null;
-    where.kind = { not: "INCOME" };
+    where.kind = "NORMAL";
   } else if (filters.categoryId !== "all") {
     where.categoryId = filters.categoryId;
   }
