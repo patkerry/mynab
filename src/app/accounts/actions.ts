@@ -100,26 +100,31 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
         data: {
           accountId: draft.accountId,
           date: draft.date,
-          payee: `Transfer to ${toAcct.name}`,
+          // Never displayed — the register derives "Transfer to/from <name>" live from
+          // counterpartAccountId (see transferLabel in src/lib/budget.ts) instead of baking in
+          // a name here that would go stale if the account were ever renamed.
+          payee: "",
           kind: "TRANSFER",
           categoryId: null,
           amountCents: -cents,
           cleared: false,
           memo,
           transferId,
+          counterpartAccountId: toId,
         },
       }),
       prisma.transaction.create({
         data: {
           accountId: toId,
           date: draft.date,
-          payee: `Transfer from ${fromAcct.name}`,
+          payee: "",
           kind: "TRANSFER",
           categoryId: null,
           amountCents: cents,
           cleared: false,
           memo,
           transferId,
+          counterpartAccountId: draft.accountId,
         },
       }),
     ]);

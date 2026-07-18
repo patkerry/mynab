@@ -94,35 +94,42 @@ model BudgetEntry {
 }
 
 model Transaction {
-  id             String          @id @default(cuid())
-  accountId      String
-  account        Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  date           String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
-  payee          String
-  memo           String          @default("")
-  kind           TransactionKind @default(NORMAL)
-  categoryId     String?
-  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  amountCents    Int // signed cents; positive = inflow, negative = outflow
-  cleared        Boolean         @default(false)
+  id                   String          @id @default(cuid())
+  accountId            String
+  account              Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  date                 String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
+  payee                String
+  memo                 String          @default("")
+  kind                 TransactionKind @default(NORMAL)
+  categoryId           String?
+  category             Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountCents          Int // signed cents; positive = inflow, negative = outflow
+  cleared              Boolean         @default(false)
   // True until a file-imported row is reviewed/approved. Excluded from category
   // activity/available and totalIncome (see buildActivityByMonth/computeDerived in
   // src/lib/budget.ts) but still counted in acctBalance/netWorth — the money already moved in
   // real life, it just hasn't been assigned a job yet. Saving any edit (see updateTransaction
   // in accounts/actions.ts) clears it — that save IS the approval, no separate action needed.
-  pending        Boolean         @default(false)
+  pending              Boolean         @default(false)
   // Bank-assigned FITID from a QFX/OFX import; null for CSV/manual entries. Unique per account
   // so re-importing an overlapping QFX file is a no-op for rows already present (see
   // importTransactions in accounts/actions.ts, which inserts with skipDuplicates: true).
-  externalId     String?
-  transferId     String? // shared by both legs of a transfer
+  externalId           String?
+  transferId           String? // shared by both legs of a transfer
+  // Set only on TRANSFER legs, to the OTHER leg's accountId. Lets the UI render a live
+  // "Transfer to/from <account name>" label (see transferLabel in src/lib/budget.ts) by looking
+  // this id up in an already-loaded Account[] list, the same way resolveBreakdown in
+  // BudgetView.tsx already does for card payments — instead of baking in a name string at
+  // creation time that would go stale the moment account renaming exists. Plain scalar, no
+  // @relation: never queried by, only ever resolved against a list already in memory.
+  counterpartAccountId String?
   // Set instead of a real delete (see deleteTransaction in accounts/actions.ts) — keeps the
   // row's externalId occupied so a later overlapping QFX import can't silently resurrect
   // something the user deliberately removed. Every read path filters deletedAt: null.
-  deletedAt      DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  reconciliation Reconciliation? // set if this transaction is the adjustment a reconciliation produced
+  deletedAt            DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  reconciliation       Reconciliation? // set if this transaction is the adjustment a reconciliation produced
 
   @@unique([accountId, externalId])
   @@index([accountId, date])

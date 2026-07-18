@@ -321,6 +321,15 @@ export function buildPaymentCategoryDraft(account: Pick<Account, "id" | "name">)
   return { name: `${account.name} Payment`, linkedAccountId: account.id };
 }
 
+// A transfer leg's displayed payee is derived live from its counterpartAccountId (see the field
+// comment on Transaction in schema.postgres.prisma) rather than a name baked in at creation
+// time — same principle BudgetView's resolveBreakdown already applies to card payments. Falls
+// back to "?" rather than throwing if the counterpart account can't be found (e.g. stale data).
+export function transferLabel(t: Pick<Transaction, "amountCents" | "counterpartAccountId">, accounts: Pick<Account, "id" | "name">[]): string {
+  const name = accounts.find((a) => a.id === t.counterpartAccountId)?.name ?? "?";
+  return t.amountCents < 0 ? `Transfer to ${name}` : `Transfer from ${name}`;
+}
+
 export type GoalProgress = { pct: number; met: boolean };
 
 // Ports the goal-progress calc from CatRow (original lines 478-487).

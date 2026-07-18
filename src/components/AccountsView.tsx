@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Check, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
+import { transferLabel } from "@/lib/budget";
 import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo, findPossibleDuplicate } from "@/app/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
@@ -256,7 +257,7 @@ export function AccountsView({
                 {dateLabel(t.date)}
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.payee}</span>
+                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{transfer ? transferLabel(t, accounts) : t.payee}</span>
                 {t.pending && (
                   <span className="pill num" style={{ color: "var(--warn)", background: "var(--warnSoft)", fontSize: 10, flexShrink: 0 }} title="Imported, not yet approved — click to review">
                     Pending

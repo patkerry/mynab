@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage } from "./budget";
+import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage, transferLabel } from "./budget";
 import type { BudgetInputs } from "./budget";
 import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
 
@@ -252,6 +252,31 @@ describe("invariant 1 (pure half): payment category shape", () => {
       name: "Visa Credit Card Payment",
       linkedAccountId: "a_card",
     });
+  });
+});
+
+describe("transferLabel (derived live from counterpartAccountId, not a baked-in string)", () => {
+  const accounts = [account({ id: "a_check", name: "Checking", type: "CHECKING" }), account({ id: "a_save", name: "Savings", type: "SAVINGS" })];
+
+  it("renders the outgoing leg as 'Transfer to <counterpart>'", () => {
+    const outgoing = txn({ id: "t1", accountId: "a_check", date: MONTH, kind: "TRANSFER", amountCents: -3000, transferId: "xfer1", counterpartAccountId: "a_save" });
+    expect(transferLabel(outgoing, accounts)).toBe("Transfer to Savings");
+  });
+
+  it("renders the incoming leg as 'Transfer from <counterpart>'", () => {
+    const incoming = txn({ id: "t2", accountId: "a_save", date: MONTH, kind: "TRANSFER", amountCents: 3000, transferId: "xfer1", counterpartAccountId: "a_check" });
+    expect(transferLabel(incoming, accounts)).toBe("Transfer from Checking");
+  });
+
+  it("reflects a renamed account immediately — it's looked up live, not cached at creation time", () => {
+    const outgoing = txn({ id: "t1", accountId: "a_check", date: MONTH, kind: "TRANSFER", amountCents: -3000, transferId: "xfer1", counterpartAccountId: "a_save" });
+    const renamedAccounts = [accounts[0], { ...accounts[1], name: "Emergency Fund" }];
+    expect(transferLabel(outgoing, renamedAccounts)).toBe("Transfer to Emergency Fund");
+  });
+
+  it("falls back to '?' rather than throwing if the counterpart can't be found", () => {
+    const orphaned = txn({ id: "t1", accountId: "a_check", date: MONTH, kind: "TRANSFER", amountCents: -3000, transferId: "xfer1", counterpartAccountId: "does-not-exist" });
+    expect(transferLabel(orphaned, accounts)).toBe("Transfer to ?");
   });
 });
 

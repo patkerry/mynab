@@ -56,6 +56,7 @@ CREATE TABLE "transactions" (
     "pending" BOOLEAN NOT NULL DEFAULT false,
     "externalId" TEXT,
     "transferId" TEXT,
+    "counterpartAccountId" TEXT,
     "deletedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
