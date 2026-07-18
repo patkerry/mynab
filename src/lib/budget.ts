@@ -1,5 +1,5 @@
 import { monthKeyOf } from "./format";
-import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma/client";
+import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
 
 export type BudgetInputs = {
   accounts: Account[];

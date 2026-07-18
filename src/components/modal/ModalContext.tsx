@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { Account, Category } from "@/generated/prisma/client";
+import type { Account, Category } from "@/generated/prisma-postgres/client";
 import { ModalHost } from "./ModalHost";
 
 export type ModalState =

@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { setGoal, removeGoal } from "@/app/budget/actions";
 import { parseMoney } from "@/lib/format";
 import { useToast } from "../toast/ToastContext";
-import type { Category, GoalType } from "@/generated/prisma/client";
+import type { Category, GoalType } from "@/generated/prisma-postgres/client";
 
 export function GoalModal({ close, cat }: { close: () => void; cat: Category }) {
   // A savings TARGET doesn't make sense on a payment category (its available rises with more

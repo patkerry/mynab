@@ -8,7 +8,7 @@ import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, ge
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
-import type { Account, Category, Reconciliation, Transaction } from "@/generated/prisma/client";
+import type { Account, Category, Reconciliation, Transaction } from "@/generated/prisma-postgres/client";
 import type { TxnDraft } from "@/lib/types";
 
 export function AccountsView({

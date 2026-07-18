@@ -40,4 +40,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/src/generated/prisma
+/src/generated/prisma-postgres
+/src/generated/prisma-sqlite
+
+# local sqlite dev database (see prisma/schema.sqlite.prisma)
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/dev.db-wal
+/prisma/dev.db-shm
+
+# electron-builder packaging output
+/dist-electron

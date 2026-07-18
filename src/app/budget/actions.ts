@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { computeAutoAssignAllocations } from "@/lib/budget";
-import type { GoalType } from "@/generated/prisma/client";
+import type { GoalType } from "@/generated/prisma-postgres/client";
 
 function revalidateAll() {
   revalidatePath("/", "layout");

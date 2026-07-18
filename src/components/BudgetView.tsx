@@ -8,7 +8,7 @@ import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { autoAssignGoals, setGroupHidden } from "@/app/budget/actions";
 import { CatRow } from "./CatRow";
-import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma/client";
+import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
 
 function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], month: string): CatBreakdown {
   const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries }, categoryId, month);

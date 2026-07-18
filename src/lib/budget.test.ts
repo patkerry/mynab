@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage } from "./budget";
 import type { BudgetInputs } from "./budget";
-import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma/client";
+import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
 
 const MONTH = "2026-07";
 

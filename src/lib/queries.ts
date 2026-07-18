@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma-postgres/client";
 import type { AccountFilter, CategoryFilter } from "./types";
 
 export async function getSidebarData() {

@@ -6,7 +6,7 @@ import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
 import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
 import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
 import { isQfx, parseQfx } from "@/lib/qfx";
-import type { Prisma, AccountType } from "@/generated/prisma/client";
+import type { Prisma, AccountType } from "@/generated/prisma-postgres/client";
 import type { TxnDraft, ImportResult } from "@/lib/types";
 
 function revalidateAll() {

@@ -1,4 +1,4 @@
-import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaClient } from "../src/generated/prisma-postgres/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { resetDatabase } from "./seedData";
 

@@ -7,7 +7,7 @@ import { fmt, parseMoney } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/budget/actions";
 import { useModal } from "./modal/ModalContext";
-import type { Category } from "@/generated/prisma/client";
+import type { Category } from "@/generated/prisma-postgres/client";
 
 export function CatRow({
   c,

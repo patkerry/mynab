@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Wallet, PiggyBank, CreditCard, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
-import type { Account } from "@/generated/prisma/client";
+import type { Account } from "@/generated/prisma-postgres/client";
 
 export function Sidebar({
   accounts,

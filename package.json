@@ -2,16 +2,27 @@
   "name": "mynab",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
+    "dev:sqlite": "DB_PROVIDER=sqlite DATABASE_URL=file:./prisma/dev.db next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "npm run check:schema-parity && vitest run",
+    "check:schema-parity": "tsx scripts/check-schema-parity.ts",
+    "db:generate": "prisma generate --schema prisma/schema.postgres.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
+    "electron:prepare": "ELECTRON_BUILD=1 next build && node scripts/prepare-standalone.mjs",
+    "electron:rebuild-native": "electron-rebuild -f -w better-sqlite3 && node scripts/sync-standalone-native.mjs",
+    "electron:dev": "npm run electron:prepare && npm run electron:rebuild-native && electron .",
+    "electron:pack": "npm run electron:prepare && electron-builder",
+    "electron:pack:win": "npm run electron:prepare && electron-builder --win --x64"
   },
   "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "better-sqlite3": "^12.11.1",
     "lucide-react": "^1.24.0",
     "next": "16.2.10",
     "pg": "^8.22.0",
@@ -20,16 +31,57 @@
     "recharts": "^3.9.2"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
+    "electron": "^42.7.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^7.8.0",
     "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.mynab.desktop",
+    "productName": "mynab",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "prisma/schema.sqlite.prisma",
+        "to": "app/prisma/schema.sqlite.prisma"
+      },
+      {
+        "from": "prisma/migrations-sqlite",
+        "to": "app/prisma/migrations-sqlite",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "afterPack": "scripts/electron-after-pack.mjs",
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }

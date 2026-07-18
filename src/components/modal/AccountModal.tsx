@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ModalShell } from "./ModalShell";
 import { addAccount } from "@/app/accounts/actions";
-import type { AccountType } from "@/generated/prisma/client";
+import type { AccountType } from "@/generated/prisma-postgres/client";
 
 const TYPE_OPTIONS: [AccountType, string][] = [
   ["CHECKING", "Checking"],

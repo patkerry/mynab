@@ -1,0 +1,157 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// SQLite variant of schema.postgres.prisma — used for the Electron desktop build (embedded,
+// file-based database, no separately-running server process). The model bodies below MUST stay
+// identical to schema.postgres.prisma (only this header block differs); scripts/check-schema-parity.ts
+// enforces that in CI/`npm test`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma-sqlite"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT
+}
+
+enum TransactionKind {
+  NORMAL
+  INCOME
+  TRANSFER
+}
+
+enum GoalType {
+  MONTHLY
+  TARGET
+}
+
+model Account {
+  id              String           @id @default(cuid())
+  name            String
+  type            AccountType
+  onBudget        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  transactions    Transaction[]
+  paymentCategory Category? // the linked "pay this card" category, if this is a credit account
+  reconciliations Reconciliation[]
+
+  @@map("accounts")
+}
+
+model CategoryGroup {
+  id         String     @id @default(cuid())
+  name       String
+  isHidden   Boolean    @default(false) // e.g. the singleton "Credit Card Payments" group
+  createdAt  DateTime   @default(now())
+  categories Category[]
+
+  @@map("category_groups")
+}
+
+model Category {
+  id              String        @id @default(cuid())
+  groupId         String
+  group           CategoryGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  name            String
+  goalType        GoalType?
+  goalAmountCents Int?
+  // User-facing hide (e.g. a one-off category like "Concert" they don't need to see going
+  // forward). Purely a display filter in BudgetView — engine math (available/RTA/goals),
+  // transaction history, and the category picker are all completely unaffected; a hidden
+  // category still works exactly like any other, it just doesn't clutter the main budget list.
+  isHidden        Boolean       @default(false)
+  // Set only on a card's auto-created payment category. Its monthly activity is DERIVED
+  // (see computeDerived in src/lib/budget.ts) rather than summed from transactions tagged
+  // with this category's own id, the way every other category works.
+  linkedAccountId String?       @unique
+  linkedAccount   Account?      @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  budgetEntries   BudgetEntry[]
+  transactions    Transaction[]
+
+  @@index([groupId])
+  @@map("categories")
+}
+
+model BudgetEntry {
+  id          String   @id @default(cuid())
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  yearMonth   String // "YYYY-MM"
+  amountCents Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([categoryId, yearMonth])
+  @@index([yearMonth])
+  @@map("budget_entries")
+}
+
+model Transaction {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  date           String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
+  payee          String
+  memo           String          @default("")
+  kind           TransactionKind @default(NORMAL)
+  categoryId     String?
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountCents    Int // signed cents; positive = inflow, negative = outflow
+  cleared        Boolean         @default(false)
+  // True until a file-imported row is reviewed/approved. Excluded from category
+  // activity/available and totalIncome (see buildActivityByMonth/computeDerived in
+  // src/lib/budget.ts) but still counted in acctBalance/netWorth — the money already moved in
+  // real life, it just hasn't been assigned a job yet. Saving any edit (see updateTransaction
+  // in accounts/actions.ts) clears it — that save IS the approval, no separate action needed.
+  pending        Boolean         @default(false)
+  // Bank-assigned FITID from a QFX/OFX import; null for CSV/manual entries. Unique per account
+  // so re-importing an overlapping QFX file is a no-op for rows already present (see
+  // importTransactions in accounts/actions.ts, which inserts with skipDuplicates: true).
+  externalId     String?
+  transferId     String? // shared by both legs of a transfer
+  // Set instead of a real delete (see deleteTransaction in accounts/actions.ts) — keeps the
+  // row's externalId occupied so a later overlapping QFX import can't silently resurrect
+  // something the user deliberately removed. Every read path filters deletedAt: null.
+  deletedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  reconciliation Reconciliation? // set if this transaction is the adjustment a reconciliation produced
+
+  @@unique([accountId, externalId])
+  @@index([accountId, date])
+  @@index([categoryId, date])
+  @@index([kind])
+  @@index([transferId])
+  @@map("transactions")
+}
+
+// One row per reconciliation performed, whether or not it produced an adjustment — this is the
+// audit trail the "Reconcile" flow (src/app/accounts/actions.ts) didn't have before: without
+// it, a clean reconciliation (statement balance already matched) left zero trace anywhere.
+model Reconciliation {
+  id                      String       @id @default(cuid())
+  accountId               String
+  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date                    String // "YYYY-MM-DD", the day the reconciliation was performed
+  statementBalanceCents   Int // the actual balance the user entered
+  adjustmentCents         Int // 0 if the tracked balance already matched
+  adjustmentTransactionId String?      @unique
+  // SetNull (not Restrict/Cascade): if the user later deletes the adjustment transaction from
+  // the register, the reconciliation record — the audit trail itself — should still stand;
+  // it just loses the link to a transaction that no longer exists.
+  adjustmentTransaction   Transaction? @relation(fields: [adjustmentTransactionId], references: [id], onDelete: SetNull)
+  createdAt               DateTime     @default(now())
+
+  @@index([accountId, date])
+  @@map("reconciliations")
+}

@@ -3,10 +3,15 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// "postgres" (default) = server deployment, talks to a real Postgres instance.
+// "sqlite" = embedded/Electron desktop build, single local file, no server process.
+// See prisma/schema.sqlite.prisma for why the model bodies must stay identical between the two.
+const provider = process.env.DB_PROVIDER === "sqlite" ? "sqlite" : "postgres";
+
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: `prisma/schema.${provider}.prisma`,
   migrations: {
-    path: "prisma/migrations",
+    path: `prisma/migrations-${provider}`,
     seed: "tsx prisma/seed.ts",
   },
   datasource: {

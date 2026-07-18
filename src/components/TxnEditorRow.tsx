@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } f
 import { Check, X } from "lucide-react";
 import { TXN_GRID } from "@/lib/format";
 import { useToast } from "./toast/ToastContext";
-import type { Account, Category } from "@/generated/prisma/client";
+import type { Account, Category } from "@/generated/prisma-postgres/client";
 import type { TxnDraft } from "@/lib/types";
 
 export function TxnEditorRow({

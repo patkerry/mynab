@@ -1,6 +1,6 @@
 import { uid, curYM } from "../src/lib/format";
 import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft } from "../src/lib/budget";
-import type { PrismaClient } from "../src/generated/prisma/client";
+import type { PrismaClient } from "../src/generated/prisma-postgres/client";
 
 // Ports seed() from the original single-file app (ynab-clone.jsx lines 48-92) into the
 // relational schema: the "income" categoryId sentinel becomes kind: "INCOME" with

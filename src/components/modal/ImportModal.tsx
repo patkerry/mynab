@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ModalShell } from "./ModalShell";
 import { importTransactions } from "@/app/accounts/actions";
 import { useToast } from "../toast/ToastContext";
-import type { Account } from "@/generated/prisma/client";
+import type { Account } from "@/generated/prisma-postgres/client";
 
 export function ImportModal({ close, accountId, accounts }: { close: () => void; accountId: string; accounts: Account[] }) {
   const [selectedAccountId, setSelectedAccountId] = useState(accountId || accounts[0]?.id || "");
