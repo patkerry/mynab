@@ -234,7 +234,7 @@ export function AccountsView({
           return (
             <div
               key={t.id}
-              className="row-hover"
+              className={t.pending ? "row-hover txn-pending" : "row-hover"}
               onClick={() => {
                 if (!transfer) {
                   setEditingId(t.id);
@@ -259,8 +259,8 @@ export function AccountsView({
               <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                 <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{transfer ? transferLabel(t, accounts) : t.payee}</span>
                 {t.pending && (
-                  <span className="pill num" style={{ color: "var(--warn)", background: "var(--warnSoft)", fontSize: 10, flexShrink: 0 }} title="Imported, not yet approved — click to review">
-                    Pending
+                  <span className="pill" style={{ color: "var(--warn)", background: "var(--warnSoft)", fontSize: 10, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }} title="Imported, not yet approved — click to review, add a category, and save to approve">
+                    Needs review
                   </span>
                 )}
               </span>
@@ -274,13 +274,13 @@ export function AccountsView({
               </span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 <button
-                  title={t.cleared ? "Cleared" : "Uncleared"}
+                  title={t.pending ? "Approve this transaction before clearing" : t.cleared ? "Cleared" : "Mark cleared"}
                   onClick={async (e) => {
                     e.stopPropagation();
                     const result = await toggleCleared(t.id);
                     if (!result.ok) showToast(result.reason);
                   }}
-                  style={{ width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center", background: t.cleared ? "var(--pos)" : "var(--line)", color: "#fff" }}
+                  style={{ width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center", background: t.cleared ? "var(--pos)" : "var(--line)", color: "#fff", opacity: t.pending ? 0.4 : 1 }}
                 >
                   <Check size={13} strokeWidth={3} />
                 </button>

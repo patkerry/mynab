@@ -7,7 +7,19 @@ const path = require("path");
 const fs = require("fs");
 const net = require("net");
 const { spawn } = require("child_process");
+const { randomUUID } = require("crypto");
 const Database = require("better-sqlite3");
+
+// A starter budget structure for a brand-new (empty) database. The desktop app's first run only
+// creates the schema — with no categories, an imported transaction can't be approved (approval
+// now requires a category), so a fresh user would be stuck. These give a usable YNAB-style set to
+// edit/rename/delete. The credit-card payment group/category is intentionally omitted here — it's
+// created on demand when a CREDIT account is added (see addAccount in accounts/actions.ts).
+const DEFAULT_CATEGORY_GROUPS = [
+  { name: "Immediate Obligations", categories: ["Rent/Mortgage", "Electric", "Water", "Internet", "Phone", "Groceries", "Transportation"] },
+  { name: "True Expenses", categories: ["Auto Maintenance", "Home Maintenance", "Medical", "Insurance", "Subscriptions"] },
+  { name: "Quality of Life", categories: ["Dining Out", "Entertainment", "Fun Money", "Vacation"] },
+];
 
 // Set from code rather than relying on CLI flags — more portable across the varied (often
 // container/CI/WSL) environments this gets tested and packaged in. disable-dev-shm-usage works
@@ -84,6 +96,42 @@ function runMigrations(dbPath, migrationsDir) {
   db.close();
 }
 
+// Seeds the starter budget into a brand-new database so a first-run user has categories to assign
+// imported transactions to (approval now requires a category). Idempotent — no-ops if any category
+// group already exists, so it's safe to call on every fresh-DB path. Timestamps must match the
+// format Prisma's better-sqlite3 adapter reads (ISO-8601 with a +00:00 offset, not a Z), and each
+// row is nudged forward by a millisecond so the createdAt-asc ordering the UI relies on is stable.
+function seedDefaults(dbPath) {
+  const db = new Database(dbPath);
+  try {
+    const existing = db.prepare(`SELECT COUNT(*) AS n FROM "category_groups"`).get().n;
+    if (existing > 0) return;
+
+    const iso = (ms) => new Date(ms).toISOString().replace("Z", "+00:00");
+    const insertGroup = db.prepare(
+      `INSERT INTO "category_groups" ("id", "name", "isHidden", "createdAt") VALUES (?, ?, 0, ?)`,
+    );
+    const insertCategory = db.prepare(
+      `INSERT INTO "categories" ("id", "groupId", "name", "isHidden", "createdAt", "updatedAt") VALUES (?, ?, ?, 0, ?, ?)`,
+    );
+
+    const seed = db.transaction((base) => {
+      let tick = 0;
+      for (const group of DEFAULT_CATEGORY_GROUPS) {
+        const groupId = randomUUID();
+        insertGroup.run(groupId, group.name, iso(base + tick++));
+        for (const name of group.categories) {
+          const ts = iso(base + tick++);
+          insertCategory.run(randomUUID(), groupId, name, ts, ts);
+        }
+      }
+    });
+    seed(Date.now());
+  } finally {
+    db.close();
+  }
+}
+
 async function startServer() {
   const userDataDir = app.getPath("userData");
   fs.mkdirSync(userDataDir, { recursive: true });
@@ -92,6 +140,7 @@ async function startServer() {
   if (!fs.existsSync(dbPath)) {
     const migrationsDir = path.join(appRoot, "prisma", "migrations-sqlite");
     runMigrations(dbPath, migrationsDir);
+    seedDefaults(dbPath);
   }
 
   const port = await findFreePort();

@@ -110,6 +110,16 @@ select {
 .row-hover:hover {
   background: var(--paper);
 }
+/* Unapproved (file-imported, pending) transactions: warn-tinted with a left stripe so they
+   stand out at a glance from approved rows, which stay clean. Kept as a class (not inline) so
+   the tint survives the .row-hover:hover rule above. */
+.txn-pending {
+  background: var(--warnSoft);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.txn-pending:hover {
+  background: #f7ebd0;
+}
 .cat-name:hover {
   color: var(--accent) !important;
   text-decoration: underline;

@@ -10,13 +10,23 @@ import type { Account } from "@/generated/prisma-postgres/client";
 export function ImportModal({ close, accountId, accounts }: { close: () => void; accountId: string; accounts: Account[] }) {
   const [selectedAccountId, setSelectedAccountId] = useState(accountId || accounts[0]?.id || "");
   const [importing, setImporting] = useState(false);
+  // Track the chosen file in state (not just the input ref) so the Import button can reflect
+  // readiness and the UI can show what's selected — otherwise clicking Import before picking a
+  // file silently no-ops, which reads as "the button doesn't work".
+  const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { showToast } = useToast();
 
   const save = async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file || !selectedAccountId) return;
+    if (!selectedAccountId) {
+      showToast("Pick an account to import into.");
+      return;
+    }
+    if (!file) {
+      showToast("Choose a CSV or QFX file to import first.");
+      return;
+    }
     setImporting(true);
     const text = await file.text();
     const result = await importTransactions(selectedAccountId, text);
@@ -50,7 +60,13 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       </div>
       <div className="field">
         <label>CSV or QFX/OFX file</label>
-        <input ref={fileRef} type="file" accept=".csv,.qfx,.ofx,text/csv" />
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.qfx,.ofx,text/csv"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        />
+        {file && <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>Selected: {file.name}</span>}
       </div>
       <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
         CSV needs columns Date, Payee, Amount, and optionally Memo. QFX/OFX (Quicken, bank
