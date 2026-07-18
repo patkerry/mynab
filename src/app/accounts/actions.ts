@@ -421,10 +421,10 @@ function parseCsvImport(csvText: string): { rows: ImportRow[]; skipped: number }
 // transaction uses (see updateTransaction).
 //
 // QFX rows carry the bank's own FITID as externalId; CSV rows carry a synthesized content
-// fingerprint (csvFingerprint in src/lib/csv.ts). Either way, inserting with
-// skipDuplicates: true means re-importing a file with an overlapping date range — the normal
-// way both banks and Quicken let you export — is a no-op for rows already present, instead of
-// creating duplicate pending transactions.
+// fingerprint (csvFingerprint in src/lib/csv.ts). Either way, rows whose externalId already
+// exists for the account are skipped (see the pre-filter below), so re-importing a file with an
+// overlapping date range — the normal way both banks and Quicken let you export — is a no-op for
+// rows already present, instead of creating duplicate pending transactions.
 export async function importTransactions(accountId: string, fileText: string): Promise<ImportResult> {
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) return { ok: false, reason: "Account not found." };
@@ -444,10 +444,29 @@ export async function importTransactions(accountId: string, fileText: string): P
   }
   if (parsed.length === 0) return { ok: false, reason: "No valid rows found in the file." };
 
+  // createMany's `skipDuplicates` is a Postgres/MySQL-only Prisma feature — it throws on SQLite
+  // (the Electron desktop build). So instead of leaning on the DB to drop rows that collide with
+  // the (accountId, externalId) unique constraint, pre-filter here: skip any row whose externalId
+  // already exists for this account (INCLUDING soft-deleted rows — they keep occupying their slot
+  // on purpose, so a deleted transaction can't silently reappear on re-import; see deleteTransaction)
+  // and any duplicate within this same file. Rows with a null externalId (e.g. a QFX row missing its
+  // FITID) never collide in a unique constraint, so they're always inserted — matching how
+  // skipDuplicates behaved. Works identically on Postgres and SQLite.
+  const existing = await prisma.transaction.findMany({ where: { accountId }, select: { externalId: true } });
+  const seen = new Set<string>();
+  for (const t of existing) if (t.externalId) seen.add(t.externalId);
+
+  const toInsert = parsed.filter((r) => {
+    if (r.externalId === null) return true;
+    if (seen.has(r.externalId)) return false;
+    seen.add(r.externalId);
+    return true;
+  });
+
   const CHUNK = 500;
   let importedCount = 0;
-  for (let i = 0; i < parsed.length; i += CHUNK) {
-    const chunk = parsed.slice(i, i + CHUNK);
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const chunk = toInsert.slice(i, i + CHUNK);
     const result = await prisma.transaction.createMany({
       data: chunk.map((r) => ({
         accountId,
@@ -461,7 +480,6 @@ export async function importTransactions(accountId: string, fileText: string): P
         pending: true,
         externalId: r.externalId,
       })),
-      skipDuplicates: true,
     });
     importedCount += result.count;
   }
