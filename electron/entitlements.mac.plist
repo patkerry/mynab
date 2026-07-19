@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Ad-hoc signing entitlements for an unsigned (no Developer ID) distribution. get-task-allow
+       lets Electron's own task_name_for_pid code-signing check on its child/helper processes
+       succeed (without it, Electron aborts at launch with
+       "task_name_for_pid: (os/kern) failure (5)"). JIT + unsigned-executable-memory are required by
+       V8; disable-library-validation lets the app load the ad-hoc-signed better-sqlite3 .node.
+       Hardened runtime is intentionally NOT enabled (it requires notarization to be useful). -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.get-task-allow</key>
+  <true/>
+</dict>
+</plist>

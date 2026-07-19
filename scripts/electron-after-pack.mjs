@@ -5,6 +5,7 @@
 // recursive filesystem copy, run after packaging, is the standard workaround for embedding a
 // `next build`-produced `output: "standalone"` bundle in an Electron app.
 import { cpSync, copyFileSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 export default async function afterPack(context) {
@@ -43,5 +44,31 @@ export default async function afterPack(context) {
     console.log(`[afterPack] synced rebuilt better-sqlite3 binary -> ${standaloneBinary}`);
   } else {
     console.warn(`[afterPack] WARNING: could not sync better-sqlite3 binary (rebuilt=${existsSync(rebuiltBinary)} standalone=${existsSync(standaloneBinary)})`);
+  }
+
+  // Ad-hoc code-sign the finished bundle. We ship without a Developer ID, and electron-builder's
+  // own signing is disabled (mac.identity = null). But the app can't just be left unsigned: this
+  // afterPack step copies files into Resources AFTER Electron's original ad-hoc signature was made,
+  // which invalidates the seal — macOS on Apple Silicon then refuses to launch it entirely ("code
+  // has no resources but signature indicates they must be present"). Re-sealing the whole bundle
+  // with a fresh ad-hoc signature + entitlements (see electron/entitlements.mac.plist) produces a
+  // valid, launchable app. This hook runs last for both single-arch and the merged --universal app,
+  // so signing here (after the lipo merge) is correct in both cases.
+  //
+  // Recipients still see Gatekeeper's "unidentified developer" prompt on a downloaded copy (right-
+  // click > Open, or clear the quarantine attr) — that's inherent to not having a Developer ID and
+  // is separate from the invalid-seal problem this fixes. Proper signing+notarization would need an
+  // Apple Developer account.
+  if (isMac) {
+    const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
+    const entitlements = join(root, "electron", "entitlements.mac.plist");
+    console.log(`[afterPack] ad-hoc signing ${appPath}`);
+    execFileSync(
+      "codesign",
+      ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, appPath],
+      { stdio: "inherit" },
+    );
+    execFileSync("codesign", ["--verify", "--deep", "--strict", appPath], { stdio: "inherit" });
+    console.log(`[afterPack] ad-hoc signature verified`);
   }
 }
