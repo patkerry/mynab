@@ -20,7 +20,12 @@ export default async function afterPack(context) {
 
   const standaloneSrc = join(root, ".next", "standalone");
   const appStandaloneDir = join(resourcesDir, "app", ".next", "standalone");
-  cpSync(standaloneSrc, appStandaloneDir, { recursive: true, force: true });
+  // dereference: Turbopack emits content-hashed symlinks under .next/standalone/.next/node_modules
+  // (e.g. better-sqlite3-<hash> -> ../../node_modules/better-sqlite3). Copying them verbatim ships
+  // fragile symlinks and, for `--universal` builds, makes @electron/universal resolve the symlinked
+  // native (.node) file inconsistently between the arm64/x64 slices — it then reports a mach-o file
+  // count mismatch and aborts. Dereferencing turns them into real dirs: identical in both slices.
+  cpSync(standaloneSrc, appStandaloneDir, { recursive: true, force: true, dereference: true });
   console.log(`[afterPack] copied ${standaloneSrc} -> ${appStandaloneDir}`);
 
   // Next's standalone tracer strips binding.gyp from its bundled better-sqlite3 copy, so
