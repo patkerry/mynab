@@ -33,6 +33,8 @@ export default async function AdminPage() {
         name: true,
         createdAt: true,
         _count: { select: { memberships: true, accounts: true, transactions: true } },
+        // The budget's owner(s) — normally exactly one OWNER membership.
+        memberships: { where: { role: "OWNER" }, select: { user: { select: { email: true, name: true } } } },
       },
     }),
   ]);
@@ -82,6 +84,7 @@ export default async function AdminPage() {
         <thead>
           <tr>
             <th style={th}>Name</th>
+            <th style={th}>Owner</th>
             <th style={th}>Members</th>
             <th style={th}>Accounts</th>
             <th style={th}>Transactions</th>
@@ -89,15 +92,19 @@ export default async function AdminPage() {
           </tr>
         </thead>
         <tbody>
-          {budgets.map((b) => (
-            <tr key={b.id}>
-              <td style={td}>{b.name}</td>
-              <td style={td}>{b._count.memberships}</td>
-              <td style={td}>{b._count.accounts}</td>
-              <td style={td}>{b._count.transactions}</td>
-              <td style={td}>{fmtDate(b.createdAt)}</td>
-            </tr>
-          ))}
+          {budgets.map((b) => {
+            const owner = b.memberships[0]?.user;
+            return (
+              <tr key={b.id}>
+                <td style={td}>{b.name}</td>
+                <td style={td}>{owner ? owner.email : <span style={{ color: "#c33" }}>no owner</span>}</td>
+                <td style={td}>{b._count.memberships}</td>
+                <td style={td}>{b._count.accounts}</td>
+                <td style={td}>{b._count.transactions}</td>
+                <td style={td}>{fmtDate(b.createdAt)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
