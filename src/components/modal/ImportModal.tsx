@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModalShell } from "./ModalShell";
-import { importTransactions } from "@/app/accounts/actions";
+import { importTransactions } from "@/app/(app)/accounts/actions";
 import { useToast } from "../toast/ToastContext";
 import type { Account } from "@/generated/prisma-postgres/client";
 

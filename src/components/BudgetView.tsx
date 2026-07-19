@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronU
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
-import { autoAssignGoals, setGroupHidden } from "@/app/budget/actions";
+import { autoAssignGoals, setGroupHidden } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { setGoal, removeGoal } from "@/app/budget/actions";
+import { setGoal, removeGoal } from "@/app/(app)/budget/actions";
 import { parseMoney } from "@/lib/format";
 import { useToast } from "../toast/ToastContext";
 import type { Category, GoalType } from "@/generated/prisma-postgres/client";

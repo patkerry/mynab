@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X, Check, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo, findPossibleDuplicate } from "@/app/accounts/actions";
+import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo, findPossibleDuplicate } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";

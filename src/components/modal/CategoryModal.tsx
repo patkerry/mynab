@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ModalShell } from "./ModalShell";
-import { addCategory } from "@/app/budget/actions";
+import { addCategory } from "@/app/(app)/budget/actions";
 
 export function CategoryModal({ close, groupId }: { close: () => void; groupId: string }) {
   const [name, setName] = useState("");

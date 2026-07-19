@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ModalShell } from "./ModalShell";
-import { addGroup } from "@/app/budget/actions";
+import { addGroup } from "@/app/(app)/budget/actions";
 
 export function GroupModal({ close }: { close: () => void }) {
   const [name, setName] = useState("");

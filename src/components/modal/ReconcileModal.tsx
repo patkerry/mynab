@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { reconcileAccount } from "@/app/accounts/actions";
+import { reconcileAccount } from "@/app/(app)/accounts/actions";
 import { fmt, parseMoney } from "@/lib/format";
 import { useToast } from "../toast/ToastContext";
 

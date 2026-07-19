@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Target, Eye, EyeOff } from "lucide-react";
 import { fmt, parseMoney } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
-import { setAssigned, setCategoryHidden } from "@/app/budget/actions";
+import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
 import { useModal } from "./modal/ModalContext";
 import type { Category } from "@/generated/prisma-postgres/client";
 
