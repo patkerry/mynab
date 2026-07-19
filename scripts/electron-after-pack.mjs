@@ -59,7 +59,12 @@ export default async function afterPack(context) {
   // click > Open, or clear the quarantine attr) — that's inherent to not having a Developer ID and
   // is separate from the invalid-seal problem this fixes. Proper signing+notarization would need an
   // Apple Developer account.
-  if (isMac) {
+  // Skip the two per-arch temp slices of a --universal build (mac-universal-{x64,arm64}-temp):
+  // signing each slice makes their _CodeSignature/CodeResources differ, and @electron/universal
+  // then aborts the merge ("Expected all non-binary files to have identical SHAs"). Sign only the
+  // merged universal app (appOutDir mac-universal) and single-arch builds (mac-arm64 / mac-x64).
+  const isUniversalSlice = isMac && context.appOutDir.endsWith("-temp");
+  if (isMac && !isUniversalSlice) {
     const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
     const entitlements = join(root, "electron", "entitlements.mac.plist");
     console.log(`[afterPack] ad-hoc signing ${appPath}`);
