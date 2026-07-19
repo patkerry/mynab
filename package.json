@@ -12,6 +12,7 @@
     "test": "npm run check:schema-parity && vitest run",
     "check:schema-parity": "tsx scripts/check-schema-parity.ts",
     "db:generate": "prisma generate --schema prisma/schema.postgres.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
+    "admin:set": "tsx scripts/set-admin.ts",
     "electron:prepare": "npm rebuild better-sqlite3 && ELECTRON_BUILD=1 next build && node scripts/prepare-standalone.mjs && node scripts/desymlink-standalone.mjs",
     "electron:rebuild-native": "electron-rebuild -f -w better-sqlite3 && node scripts/sync-standalone-native.mjs",
     "electron:dev": "npm run electron:prepare && npm run electron:rebuild-native && electron .",

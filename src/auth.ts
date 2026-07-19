@@ -8,9 +8,21 @@ import { ensureUserAndBudget } from "@/lib/user-provisioning";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   callbacks: {
+    // Block sign-in for a suspended account (existing users only — a brand-new user can't be
+    // suspended yet). Provisioning happens in the jwt callback below.
+    async signIn({ user }) {
+      if (!user?.email) return false;
+      const existing = await (await import("@/lib/db")).prisma.user.findUnique({
+        where: { email: user.email },
+        select: { suspendedAt: true },
+      });
+      if (existing?.suspendedAt) return false;
+      return true;
+    },
     // Runs on every token read; `user` is only set on initial sign-in. On first sign-in we provision
     // the app-level User + their first Budget + OWNER Membership (idempotent by email), then stash our
-    // DB user id on the token so getActiveBudget can resolve the user's budgets without a DB lookup here.
+    // DB user id + admin flag on the token. isAdmin here is only an optimistic hint for the UI — the
+    // real /admin gate re-checks the DB (see src/lib/admin.ts requireAdmin).
     async jwt({ token, user }) {
       if (user?.email) {
         const dbUser = await ensureUserAndBudget({
@@ -19,12 +31,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           image: user.image ?? null,
         });
         token.userId = dbUser.id;
+        token.isAdmin = dbUser.isAdmin;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user && typeof token.userId === "string") {
         session.user.id = token.userId;
+        session.user.isAdmin = token.isAdmin === true;
       }
       return session;
     },

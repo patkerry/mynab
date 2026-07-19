@@ -64,6 +64,11 @@ model User {
   email       String       @unique
   name        String?
   image       String?
+  // Global app administrator (can access /admin to manage all users/budgets). Bootstrapped via the
+  // set-admin script (scripts/set-admin.ts); there's no in-app "make admin" flow by design.
+  isAdmin     Boolean      @default(false)
+  // Set when an admin suspends the account: blocks new logins and all data access until cleared.
+  suspendedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   memberships Membership[]

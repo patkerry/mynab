@@ -16,6 +16,11 @@ export async function resolveWebActiveBudget(): Promise<ActiveBudget> {
   const userId = session?.user?.id;
   if (!userId) throw new Error("Unauthenticated");
 
+  // Enforce suspension in the data layer so it takes effect immediately, even for a user who still
+  // holds a valid session JWT (the signIn block only stops new logins). No data access while suspended.
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { suspendedAt: true } });
+  if (!user || user.suspendedAt) throw new Error("Account suspended");
+
   const selected = (await cookies()).get(ACTIVE_BUDGET_COOKIE)?.value;
 
   // Only honor the cookie if the user actually has a membership for it — otherwise a tampered
