@@ -28,8 +28,17 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       return;
     }
     setImporting(true);
-    const text = await file.text();
-    const result = await importTransactions(selectedAccountId, text);
+    let result;
+    try {
+      const text = await file.text();
+      result = await importTransactions(selectedAccountId, text);
+    } catch (err) {
+      // Never leave the button stuck on "Importing…": surface the failure (e.g. a too-large file
+      // exceeding the Server Action body limit, or a network/server error) and reset.
+      showToast(err instanceof Error ? `Import failed: ${err.message}` : "Import failed.");
+      setImporting(false);
+      return;
+    }
     setImporting(false);
     if (!result.ok) {
       showToast(result.reason);

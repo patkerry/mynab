@@ -9,6 +9,15 @@ const nextConfig: NextConfig = {
   // you to run .next/standalone/server.js directly instead), which would break the conventional
   // server-deployment path this app also needs to keep working.
   output: process.env.ELECTRON_BUILD === "1" ? "standalone" : undefined,
+
+  // The CSV/QFX import sends the whole file's text through a Server Action (see importTransactions
+  // in src/app/accounts/actions.ts). Server Actions cap the request body at 1MB by default, which a
+  // real bank export can exceed — raise it so larger statements import instead of failing.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;
