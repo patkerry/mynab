@@ -137,9 +137,16 @@ async function startServer() {
   fs.mkdirSync(userDataDir, { recursive: true });
   const dbPath = path.join(userDataDir, "mynab.db");
 
-  if (!fs.existsSync(dbPath)) {
-    const migrationsDir = path.join(appRoot, "prisma", "migrations-sqlite");
-    runMigrations(dbPath, migrationsDir);
+  // Run migrations on EVERY launch, not just first run: an app update may ship new schema
+  // migrations that must be applied to the user's existing database (which lives in userData,
+  // separate from the app bundle, and survives replacing the app). runMigrations is idempotent —
+  // it records applied migrations in an _app_migrations table and skips them — so re-running it is
+  // a no-op when nothing is pending. Only seed starter data when the DB is brand new, so an update
+  // never re-injects default categories over the user's own.
+  const isFreshDb = !fs.existsSync(dbPath);
+  const migrationsDir = path.join(appRoot, "prisma", "migrations-sqlite");
+  runMigrations(dbPath, migrationsDir);
+  if (isFreshDb) {
     seedDefaults(dbPath);
   }
 
