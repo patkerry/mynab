@@ -32,8 +32,87 @@ enum GoalType {
   TARGET
 }
 
+// Role of a user within a budget. OWNER can manage members + delete the budget; EDITOR can change
+// budget data; VIEWER is read-only. Enforced in the data-access layer (see src/lib/budget-context.ts).
+enum MembershipRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+// The ownership boundary for the whole app: every Account/Category/Transaction/etc. belongs to
+// exactly one Budget. A single-user setup is just a Budget with one OWNER membership; a shared
+// household is a Budget with several memberships. The embedded desktop (SQLite) build uses exactly
+// one Budget and no users/memberships — see electron/main.js and src/lib/budget-context.ts.
+model Budget {
+  id              String           @id @default(cuid())
+  name            String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  accounts        Account[]
+  categoryGroups  CategoryGroup[]
+  categories      Category[]
+  budgetEntries   BudgetEntry[]
+  transactions    Transaction[]
+  reconciliations Reconciliation[]
+  memberships     Membership[]
+  invites         Invite[]
+
+  @@map("budgets")
+}
+
+// Web-only auth identity (Google OAuth via Auth.js). Never populated by the desktop build.
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  image       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships Membership[]
+  invitesSent Invite[]     @relation("InviteInviter")
+
+  @@map("users")
+}
+
+// Join between a User and a Budget, carrying the user's role in that budget.
+model Membership {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budgetId  String
+  budget    Budget         @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  role      MembershipRole @default(EDITOR)
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, budgetId])
+  @@index([budgetId])
+  @@map("memberships")
+}
+
+// A pending invitation for someone to join a budget (Phase 2: sharing). Accepting it creates a
+// Membership. token is the unguessable value embedded in the invite link.
+model Invite {
+  id          String         @id @default(cuid())
+  budgetId    String
+  budget      Budget         @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  email       String
+  role        MembershipRole @default(EDITOR)
+  token       String         @unique
+  invitedById String
+  invitedBy   User           @relation("InviteInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  acceptedAt  DateTime?
+
+  @@unique([budgetId, email])
+  @@index([budgetId])
+  @@map("invites")
+}
+
 model Account {
   id              String           @id @default(cuid())
+  budgetId        String
+  budget          Budget           @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   name            String
   type            AccountType
   onBudget        Boolean          @default(true)
@@ -43,21 +122,27 @@ model Account {
   paymentCategory Category? // the linked "pay this card" category, if this is a credit account
   reconciliations Reconciliation[]
 
+  @@index([budgetId])
   @@map("accounts")
 }
 
 model CategoryGroup {
   id         String     @id @default(cuid())
+  budgetId   String
+  budget     Budget     @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   name       String
   isHidden   Boolean    @default(false) // e.g. the singleton "Credit Card Payments" group
   createdAt  DateTime   @default(now())
   categories Category[]
 
+  @@index([budgetId])
   @@map("category_groups")
 }
 
 model Category {
   id              String        @id @default(cuid())
+  budgetId        String
+  budget          Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   groupId         String
   group           CategoryGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
   name            String
@@ -78,12 +163,15 @@ model Category {
   budgetEntries   BudgetEntry[]
   transactions    Transaction[]
 
+  @@index([budgetId])
   @@index([groupId])
   @@map("categories")
 }
 
 model BudgetEntry {
   id          String   @id @default(cuid())
+  budgetId    String
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   yearMonth   String // "YYYY-MM"
@@ -92,12 +180,15 @@ model BudgetEntry {
   updatedAt   DateTime @updatedAt
 
   @@unique([categoryId, yearMonth])
+  @@index([budgetId])
   @@index([yearMonth])
   @@map("budget_entries")
 }
 
 model Transaction {
   id                   String          @id @default(cuid())
+  budgetId             String
+  budget               Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   accountId            String
   account              Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
   date                 String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
@@ -135,6 +226,7 @@ model Transaction {
   reconciliation       Reconciliation? // set if this transaction is the adjustment a reconciliation produced
 
   @@unique([accountId, externalId])
+  @@index([budgetId])
   @@index([accountId, date])
   @@index([categoryId, date])
   @@index([kind])
@@ -147,6 +239,8 @@ model Transaction {
 // it, a clean reconciliation (statement balance already matched) left zero trace anywhere.
 model Reconciliation {
   id                      String       @id @default(cuid())
+  budgetId                String
+  budget                  Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   accountId               String
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   date                    String // "YYYY-MM-DD", the day the reconciliation was performed
@@ -159,6 +253,7 @@ model Reconciliation {
   adjustmentTransaction   Transaction? @relation(fields: [adjustmentTransactionId], references: [id], onDelete: SetNull)
   createdAt               DateTime     @default(now())
 
+  @@index([budgetId])
   @@index([accountId, date])
   @@map("reconciliations")
 }

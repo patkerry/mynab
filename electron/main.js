@@ -15,6 +15,11 @@ const Database = require("better-sqlite3");
 // now requires a category), so a fresh user would be stuck. These give a usable YNAB-style set to
 // edit/rename/delete. The credit-card payment group/category is intentionally omitted here — it's
 // created on demand when a CREDIT account is added (see addAccount in accounts/actions.ts).
+// The desktop's single budget id. Must match the id seeded by the multi-user migration
+// (prisma/migrations-sqlite/.../migration.sql) and LOCAL_BUDGET_ID in src/lib/budget-context.ts,
+// which is what the running Next server scopes every query to when DB_PROVIDER=sqlite.
+const LOCAL_BUDGET_ID = "default-budget";
+
 const DEFAULT_CATEGORY_GROUPS = [
   { name: "Immediate Obligations", categories: ["Rent/Mortgage", "Electric", "Water", "Internet", "Phone", "Groceries", "Transportation"] },
   { name: "True Expenses", categories: ["Auto Maintenance", "Home Maintenance", "Medical", "Insurance", "Subscriptions"] },
@@ -108,21 +113,24 @@ function seedDefaults(dbPath) {
     if (existing > 0) return;
 
     const iso = (ms) => new Date(ms).toISOString().replace("Z", "+00:00");
+    // Everything on the desktop belongs to the single local budget seeded by the multi-user
+    // migration (see prisma/migrations-sqlite/.../migration.sql and LOCAL_BUDGET_ID in
+    // src/lib/budget-context.ts). The desktop has no users/memberships — just this one budget.
     const insertGroup = db.prepare(
-      `INSERT INTO "category_groups" ("id", "name", "isHidden", "createdAt") VALUES (?, ?, 0, ?)`,
+      `INSERT INTO "category_groups" ("id", "budgetId", "name", "isHidden", "createdAt") VALUES (?, ?, ?, 0, ?)`,
     );
     const insertCategory = db.prepare(
-      `INSERT INTO "categories" ("id", "groupId", "name", "isHidden", "createdAt", "updatedAt") VALUES (?, ?, ?, 0, ?, ?)`,
+      `INSERT INTO "categories" ("id", "budgetId", "groupId", "name", "isHidden", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, 0, ?, ?)`,
     );
 
     const seed = db.transaction((base) => {
       let tick = 0;
       for (const group of DEFAULT_CATEGORY_GROUPS) {
         const groupId = randomUUID();
-        insertGroup.run(groupId, group.name, iso(base + tick++));
+        insertGroup.run(groupId, LOCAL_BUDGET_ID, group.name, iso(base + tick++));
         for (const name of group.categories) {
           const ts = iso(base + tick++);
-          insertCategory.run(randomUUID(), groupId, name, ts, ts);
+          insertCategory.run(randomUUID(), LOCAL_BUDGET_ID, groupId, name, ts, ts);
         }
       }
     });

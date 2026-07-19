@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { requireBudget } from "@/lib/budget-context";
 import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
-import { PAYMENT_GROUP_ID, PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
+import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
 import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
 import { isQfx, parseQfx } from "@/lib/qfx";
 import { buildHistoryMap, guessCategoryId, KNOWN_MERCHANTS } from "@/lib/merchant";
@@ -19,9 +20,10 @@ function revalidateAll() {
 // categoryId of a transaction. Tagging one directly would double-count against the derived
 // contribution and cancel to a net-zero effect on every category, silently discarding that
 // transaction's budget impact. Checked server-side (not just hidden from the UI picker) so
-// this can't be bypassed by calling the action directly.
-async function isPaymentCategory(categoryId: string): Promise<boolean> {
-  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { linkedAccountId: true } });
+// this can't be bypassed by calling the action directly. Scoped to the active budget so a
+// caller can't probe another budget's categories by id.
+async function isPaymentCategory(categoryId: string, budgetId: string): Promise<boolean> {
+  const category = await prisma.category.findFirst({ where: { id: categoryId, budgetId }, select: { linkedAccountId: true } });
   return category?.linkedAccountId != null;
 }
 
@@ -30,17 +32,17 @@ async function isPaymentCategory(categoryId: string): Promise<boolean> {
 // same mechanism a manual assignment uses (upsert a BudgetEntry), just auto-triggered. Only
 // fires for CREDIT accounts with a real categoryId, matching the deferred item's exact scope;
 // cash overspending is untouched. Must run inside the same `tx` as the transaction write so it
-// sees it when re-fetching current state.
-async function applyOverspendCoverage(tx: Prisma.TransactionClient, accountId: string, categoryId: string | null, date: string) {
+// sees it when re-fetching current state. All reads/writes scoped to the active budget.
+async function applyOverspendCoverage(tx: Prisma.TransactionClient, budgetId: string, accountId: string, categoryId: string | null, date: string) {
   if (!categoryId) return;
-  const account = await tx.account.findUnique({ where: { id: accountId } });
+  const account = await tx.account.findFirst({ where: { id: accountId, budgetId } });
   if (account?.type !== "CREDIT") return;
 
   const [accounts, categories, transactions, budgetEntries] = await Promise.all([
-    tx.account.findMany(),
-    tx.category.findMany(),
-    tx.transaction.findMany({ where: { deletedAt: null } }),
-    tx.budgetEntry.findMany(),
+    tx.account.findMany({ where: { budgetId } }),
+    tx.category.findMany({ where: { budgetId } }),
+    tx.transaction.findMany({ where: { budgetId, deletedAt: null } }),
+    tx.budgetEntry.findMany({ where: { budgetId } }),
   ]);
   const month = monthKeyOf(date);
   const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries }, categoryId, month);
@@ -49,7 +51,7 @@ async function applyOverspendCoverage(tx: Prisma.TransactionClient, accountId: s
   await tx.budgetEntry.upsert({
     where: { categoryId_yearMonth: { categoryId, yearMonth: month } },
     update: { amountCents: { increment: coverage } },
-    create: { categoryId, yearMonth: month, amountCents: coverage },
+    create: { budgetId, categoryId, yearMonth: month, amountCents: coverage },
   });
 }
 
@@ -61,6 +63,7 @@ export type PossibleDuplicate = { date: string; payee: string; amountCents: numb
 // their payee ("Transfer to X") is synthesized, not user-typed, and two legitimate transfers
 // between the same accounts on the same day for the same amount is a real, unremarkable case.
 export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDuplicate | null> {
+  const { budgetId } = await requireBudget("read");
   if (draft.categoryId.startsWith("transfer:")) return null;
   const cents = parseMoney(draft.amount);
   if (!cents || !draft.accountId) return null;
@@ -69,7 +72,7 @@ export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDu
   const payee = draft.payee.trim() || (isIncome ? "Income" : "Payee");
 
   const existing = await prisma.transaction.findFirst({
-    where: { accountId: draft.accountId, date: draft.date, payee: { equals: payee, mode: "insensitive" }, amountCents, deletedAt: null },
+    where: { budgetId, accountId: draft.accountId, date: draft.date, payee: { equals: payee, mode: "insensitive" }, amountCents, deletedAt: null },
   });
   return existing ? { date: existing.date, payee: existing.payee, amountCents: existing.amountCents } : null;
 }
@@ -77,6 +80,7 @@ export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDu
 // Ports addTxn (ynab-clone.jsx lines 575-596): categoryId is "transfer:<accountId>",
 // "income", "" (uncategorized), or a real category id.
 export async function addTransaction(draft: TxnDraft): Promise<boolean> {
+  const { budgetId } = await requireBudget("write");
   const cents = parseMoney(draft.amount);
   if (!cents || !draft.accountId) return false;
   const memo = (draft.memo || "").trim();
@@ -90,15 +94,17 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
     if (cents <= 0) return false;
     const toId = draft.categoryId.slice(9);
     if (!toId || toId === draft.accountId) return false;
+    // Both legs must be accounts in the active budget.
     const [fromAcct, toAcct] = await Promise.all([
-      prisma.account.findUnique({ where: { id: draft.accountId } }),
-      prisma.account.findUnique({ where: { id: toId } }),
+      prisma.account.findFirst({ where: { id: draft.accountId, budgetId } }),
+      prisma.account.findFirst({ where: { id: toId, budgetId } }),
     ]);
     if (!fromAcct || !toAcct) return false;
     const transferId = uid("xfer");
     await prisma.$transaction([
       prisma.transaction.create({
         data: {
+          budgetId,
           accountId: draft.accountId,
           date: draft.date,
           // Never displayed — the register derives "Transfer to/from <name>" live from
@@ -116,6 +122,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
       }),
       prisma.transaction.create({
         data: {
+          budgetId,
           accountId: toId,
           date: draft.date,
           payee: "",
@@ -130,8 +137,11 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
       }),
     ]);
   } else if (draft.categoryId === "income") {
+    const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
+    if (!acct) return false;
     await prisma.transaction.create({
       data: {
+        budgetId,
         accountId: draft.accountId,
         date: draft.date,
         payee: draft.payee.trim() || "Income",
@@ -143,7 +153,9 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
       },
     });
   } else {
-    if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
+    const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
+    if (!acct) return false;
+    if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
     const categoryId = draft.categoryId || null;
     // A manually-added transaction is created already-approved (pending: false), so hold it to the
     // same rule as approving an import (see updateTransaction): a NORMAL transaction needs a
@@ -152,6 +164,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
     await prisma.$transaction(async (tx) => {
       await tx.transaction.create({
         data: {
+          budgetId,
           accountId: draft.accountId,
           date: draft.date,
           payee: draft.payee.trim() || "Payee",
@@ -162,7 +175,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
           memo,
         },
       });
-      await applyOverspendCoverage(tx, draft.accountId, categoryId, draft.date);
+      await applyOverspendCoverage(tx, budgetId, draft.accountId, categoryId, draft.date);
     });
   }
   revalidateAll();
@@ -173,9 +186,17 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
 // transfer isn't supported, matching the original (TxnEditorRow disables allowTransfer
 // when editing — ynab-clone.jsx line 672).
 export async function updateTransaction(id: string, draft: TxnDraft): Promise<boolean> {
+  const { budgetId } = await requireBudget("write");
   const cents = parseMoney(draft.amount);
   if (!cents || !draft.accountId) return false;
   const memo = (draft.memo || "").trim();
+
+  // The edited row and its new account must both belong to the active budget.
+  const [owned, acct] = await Promise.all([
+    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true } }),
+    prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } }),
+  ]);
+  if (!owned || !acct) return false;
 
   if (draft.categoryId === "income") {
     await prisma.transaction.update({
@@ -194,7 +215,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       },
     });
   } else {
-    if (draft.categoryId && (await isPaymentCategory(draft.categoryId))) return false;
+    if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
     const categoryId = draft.categoryId || null;
     // Saving is how a pending import gets approved (pending -> false), so a NORMAL transaction
     // must have a category to be saved: approving an uncategorized purchase would leave money
@@ -216,7 +237,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           pending: false,
         },
       });
-      await applyOverspendCoverage(tx, draft.accountId, categoryId, draft.date);
+      await applyOverspendCoverage(tx, budgetId, draft.accountId, categoryId, draft.date);
     });
   }
   revalidateAll();
@@ -231,7 +252,8 @@ export type ToggleClearedResult = { ok: true } | { ok: false; reason: string };
 // transition on a plain NORMAL transaction with no category; INCOME and TRANSFER legs are
 // intentionally always categoryId: null and are unaffected (kind !== "NORMAL" short-circuits).
 export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
-  const t = await prisma.transaction.findUnique({ where: { id } });
+  const { budgetId } = await requireBudget("write");
+  const t = await prisma.transaction.findFirst({ where: { id, budgetId } });
   if (!t) return { ok: false, reason: "Transaction not found." };
 
   const willClear = !t.cleared;
@@ -253,8 +275,8 @@ export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
 // row, first; shared by getReconcileInfo (the pre-check that gates opening the modal) and
 // reconcileAccount (which re-checks server-side rather than trusting that nothing changed
 // between opening the modal and saving it).
-async function reconcileEligibility(accountId: string) {
-  const transactions = await prisma.transaction.findMany({ where: { accountId, deletedAt: null } });
+async function reconcileEligibility(budgetId: string, accountId: string) {
+  const transactions = await prisma.transaction.findMany({ where: { budgetId, accountId, deletedAt: null } });
   const unclearedCount = transactions.filter((t) => !t.cleared).length;
   const pendingCount = transactions.filter((t) => t.pending).length;
   return { transactions, unclearedCount, pendingCount };
@@ -273,7 +295,10 @@ function blockingReason(unclearedCount: number, pendingCount: number): string | 
 export type ReconcileCheck = { ok: true; currentBalanceCents: number } | { ok: false; reason: string };
 
 export async function getReconcileInfo(accountId: string): Promise<ReconcileCheck> {
-  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(accountId);
+  const { budgetId } = await requireBudget("read");
+  const account = await prisma.account.findFirst({ where: { id: accountId, budgetId }, select: { id: true } });
+  if (!account) return { ok: false, reason: "Account not found." };
+  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(budgetId, accountId);
   const reason = blockingReason(unclearedCount, pendingCount);
   if (reason) return { ok: false, reason };
   return { ok: true, currentBalanceCents: transactions.reduce((s, t) => s + t.amountCents, 0) };
@@ -287,10 +312,11 @@ export type ReconcileResult = { ok: true; adjustmentCents: number } | { ok: fals
 // leave zero trace anywhere), plus a single adjustment transaction (already cleared, dated as
 // of "now") only when the statement balance actually differs from the tracked one.
 export async function reconcileAccount(accountId: string, actualBalance: string): Promise<ReconcileResult> {
-  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  const { budgetId } = await requireBudget("write");
+  const account = await prisma.account.findFirst({ where: { id: accountId, budgetId } });
   if (!account) return { ok: false, reason: "Account not found." };
 
-  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(accountId);
+  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(budgetId, accountId);
   const reason = blockingReason(unclearedCount, pendingCount);
   if (reason) return { ok: false, reason };
 
@@ -308,6 +334,7 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
       const isIncome = diff > 0 && account.type !== "CREDIT";
       const adjustment = await tx.transaction.create({
         data: {
+          budgetId,
           accountId,
           date: today,
           payee: "Reconciliation Adjustment",
@@ -321,7 +348,7 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
       adjustmentTransactionId = adjustment.id;
     }
     await tx.reconciliation.create({
-      data: { accountId, date: today, statementBalanceCents: actualCents, adjustmentCents: diff, adjustmentTransactionId },
+      data: { budgetId, accountId, date: today, statementBalanceCents: actualCents, adjustmentCents: diff, adjustmentTransactionId },
     });
   });
 
@@ -334,10 +361,12 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
 // came from a QFX import — keeps blocking re-import of that same bank transaction forever,
 // rather than the delete freeing it up to silently reappear on the next overlapping import.
 export async function deleteTransaction(id: string) {
-  const t = await prisma.transaction.findUnique({ where: { id } });
+  const { budgetId } = await requireBudget("write");
+  const t = await prisma.transaction.findFirst({ where: { id, budgetId } });
   if (!t) return;
   const deletedAt = new Date();
-  if (t.transferId) await prisma.transaction.updateMany({ where: { transferId: t.transferId }, data: { deletedAt } });
+  // Scope by budgetId as well as transferId so a caller can't soft-delete rows outside the budget.
+  if (t.transferId) await prisma.transaction.updateMany({ where: { budgetId, transferId: t.transferId }, data: { deletedAt } });
   else await prisma.transaction.update({ where: { id }, data: { deletedAt } });
   revalidateAll();
 }
@@ -345,19 +374,21 @@ export async function deleteTransaction(id: string) {
 // Ports AccountModal's save (ynab-clone.jsx lines 899-912): a positive starting balance
 // becomes income (unless the account is a credit card), a negative or zero balance doesn't.
 // Invariant 1 (DB half): a new on-budget CREDIT account gets exactly one linked payment
-// category in the singleton hidden "Credit Card Payments" group, created/found in the same
+// category in the (per-budget) hidden "Credit Card Payments" group, created/found in the same
 // transaction. The pure "what should it look like" decision lives in buildPaymentCategoryDraft
 // (src/lib/budget.ts, unit-tested); this just persists it.
 export async function addAccount(input: { name: string; type: AccountType; balance: string }) {
+  const { budgetId } = await requireBudget("write");
   const name = input.name.trim();
   if (!name) return;
   const cents = parseMoney(input.balance);
   await prisma.$transaction(async (tx) => {
-    const account = await tx.account.create({ data: { name, type: input.type, onBudget: true } });
+    const account = await tx.account.create({ data: { budgetId, name, type: input.type, onBudget: true } });
     if (cents !== 0) {
       const isIncome = cents > 0 && input.type !== "CREDIT";
       await tx.transaction.create({
         data: {
+          budgetId,
           accountId: account.id,
           date: `${curYM()}-01`,
           payee: "Starting Balance",
@@ -370,17 +401,15 @@ export async function addAccount(input: { name: string; type: AccountType; balan
       });
     }
     if (input.type === "CREDIT") {
-      // Upsert on a fixed, well-known id (matching the backfill migration's convention)
-      // instead of findFirst-then-create — that pattern raced under concurrent requests since
-      // nothing constrains `isHidden` to at most one true row. Upserting on the id's own
-      // uniqueness is atomic regardless of concurrency.
-      const hiddenGroup = await tx.categoryGroup.upsert({
-        where: { id: PAYMENT_GROUP_ID },
-        update: {},
-        create: { id: PAYMENT_GROUP_ID, name: PAYMENT_GROUP_NAME, isHidden: true },
-      });
+      // The hidden "Credit Card Payments" group is per-budget now (a fixed global id can't be
+      // shared across budgets), so find this budget's group by its marker and create it if absent.
+      // Runs inside the surrounding $transaction; the only race is two credit accounts added to the
+      // same budget concurrently, which is rare and at worst yields a duplicate hidden group.
+      const hiddenGroup =
+        (await tx.categoryGroup.findFirst({ where: { budgetId, isHidden: true, name: PAYMENT_GROUP_NAME } })) ??
+        (await tx.categoryGroup.create({ data: { budgetId, name: PAYMENT_GROUP_NAME, isHidden: true } }));
       const draft = buildPaymentCategoryDraft(account);
-      await tx.category.create({ data: { groupId: hiddenGroup.id, name: draft.name, linkedAccountId: draft.linkedAccountId } });
+      await tx.category.create({ data: { budgetId, groupId: hiddenGroup.id, name: draft.name, linkedAccountId: draft.linkedAccountId } });
     }
   });
   revalidateAll();
@@ -437,7 +466,8 @@ function parseCsvImport(csvText: string): { rows: ImportRow[]; skipped: number }
 // overlapping date range — the normal way both banks and Quicken let you export — is a no-op for
 // rows already present, instead of creating duplicate pending transactions.
 export async function importTransactions(accountId: string, fileText: string): Promise<ImportResult> {
-  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  const { budgetId } = await requireBudget("write");
+  const account = await prisma.account.findFirst({ where: { id: accountId, budgetId } });
   if (!account) return { ok: false, reason: "Account not found." };
 
   let parsed: ImportRow[];
@@ -463,7 +493,7 @@ export async function importTransactions(accountId: string, fileText: string): P
   // and any duplicate within this same file. Rows with a null externalId (e.g. a QFX row missing its
   // FITID) never collide in a unique constraint, so they're always inserted — matching how
   // skipDuplicates behaved. Works identically on Postgres and SQLite.
-  const existing = await prisma.transaction.findMany({ where: { accountId }, select: { externalId: true } });
+  const existing = await prisma.transaction.findMany({ where: { budgetId, accountId }, select: { externalId: true } });
   const seen = new Set<string>();
   for (const t of existing) if (t.externalId) seen.add(t.externalId);
 
@@ -477,16 +507,16 @@ export async function importTransactions(accountId: string, fileText: string): P
   // Guess a category for each imported (still-pending) row from the user's own history plus a
   // static seed of common merchants — a *suggestion* only: the row stays pending, so the guess
   // never counts against a budget until the user reviews and approves it (see updateTransaction).
-  // History = every already-categorized transaction (all accounts), majority-voted per merchant.
+  // History = every already-categorized transaction (this budget), majority-voted per merchant.
   const categorized = await prisma.transaction.findMany({
-    where: { deletedAt: null, kind: "NORMAL", categoryId: { not: null } },
+    where: { budgetId, deletedAt: null, kind: "NORMAL", categoryId: { not: null } },
     select: { payee: true, memo: true, categoryId: true },
   });
   const history = buildHistoryMap(categorized);
-  // Resolve the KNOWN_MERCHANTS name->category seed to this DB's category ids (skip a payment
+  // Resolve the KNOWN_MERCHANTS name->category seed to this budget's category ids (skip a payment
   // category or a name the user doesn't have). Non-payment categories only — a card's payment
   // category is never a transaction's own categoryId (see isPaymentCategory).
-  const cats = await prisma.category.findMany({ where: { linkedAccountId: null }, select: { id: true, name: true } });
+  const cats = await prisma.category.findMany({ where: { budgetId, linkedAccountId: null }, select: { id: true, name: true } });
   const idByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
   const seed = KNOWN_MERCHANTS.map((k) => ({ match: k.match, categoryId: idByName.get(k.category.toLowerCase()) }))
     .filter((s): s is { match: string; categoryId: string } => Boolean(s.categoryId));
@@ -501,6 +531,7 @@ export async function importTransactions(accountId: string, fileText: string): P
         const categoryId = guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
         if (categoryId) guessedCount++;
         return {
+          budgetId,
           accountId,
           date: r.date,
           payee: r.payee,

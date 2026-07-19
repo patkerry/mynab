@@ -9,7 +9,7 @@ const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL as strin
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  await resetDatabase(prisma as unknown as PrismaClientPostgres);
+  await resetDatabase(prisma as unknown as PrismaClientPostgres, "default-budget");
 }
 
 main()

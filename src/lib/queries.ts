@@ -1,11 +1,17 @@
 import { prisma } from "./db";
+import { getActiveBudgetId } from "./budget-context";
 import type { Prisma } from "@/generated/prisma-postgres/client";
 import type { AccountFilter, CategoryFilter } from "./types";
 
+// Every read here is scoped to the active budget (getActiveBudgetId): desktop resolves to the one
+// local budget, web to the user's selected budget. This is the primary guard against one budget's
+// data leaking into another's view — the filter is applied to every table, not just the top-level one.
+
 export async function getSidebarData() {
+  const budgetId = await getActiveBudgetId();
   const [accounts, transactions] = await Promise.all([
-    prisma.account.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.transaction.findMany({ where: { deletedAt: null }, select: { accountId: true, amountCents: true } }),
+    prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true } }),
   ]);
   const acctBalance: Record<string, number> = {};
   accounts.forEach((a) => (acctBalance[a.id] = 0));
@@ -25,12 +31,13 @@ export async function getSidebarData() {
 // a visible row in BudgetView — but `categories` is NOT filtered: the linked payment category
 // it contains still has to reach computeDerived for available()/activityIn() to work.
 export async function getBudgetPageData() {
+  const budgetId = await getActiveBudgetId();
   const [groups, categories, transactions, budgetEntries, accounts] = await Promise.all([
-    prisma.categoryGroup.findMany({ where: { isHidden: false }, orderBy: { createdAt: "asc" } }),
-    prisma.category.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.transaction.findMany({ where: { deletedAt: null } }),
-    prisma.budgetEntry.findMany(),
-    prisma.account.findMany(),
+    prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: { createdAt: "asc" } }),
+    prisma.category.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
+    prisma.budgetEntry.findMany({ where: { budgetId } }),
+    prisma.account.findMany({ where: { budgetId } }),
   ]);
   return { groups, categories, transactions, budgetEntries, accounts };
 }
@@ -43,7 +50,8 @@ export const ACCOUNT_TXNS_PAGE_SIZE = 50;
 // filter would wrongly pull income and transfers into "Uncategorized". Only a NORMAL row with no
 // category is genuinely uncategorized.
 export async function getAccountTransactions(filters: { accountId: AccountFilter; categoryId: CategoryFilter; page: number }) {
-  const where: Prisma.TransactionWhereInput = { deletedAt: null };
+  const budgetId = await getActiveBudgetId();
+  const where: Prisma.TransactionWhereInput = { budgetId, deletedAt: null };
   if (filters.accountId !== "all") where.accountId = filters.accountId;
   if (filters.categoryId === "income") where.kind = "INCOME";
   else if (filters.categoryId === "none") {
@@ -67,16 +75,16 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     prisma.transaction.aggregate({ where: { ...where, cleared: true }, _sum: { amountCents: true } }),
     prisma.transaction.aggregate({ where: { ...where, cleared: false }, _sum: { amountCents: true } }),
     prisma.transaction.count({ where: { ...where, pending: true } }),
-    prisma.account.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which
     // needs them for computeDerived): they're never a valid categoryId for a transaction
     // (their activity is derived, not tagged — see addTransaction/updateTransaction's
     // isPaymentCategory guard), so they shouldn't appear as a selectable option in the
     // category filter or the transaction editor's category picker.
-    prisma.category.findMany({ where: { linkedAccountId: null }, orderBy: { createdAt: "asc" } }),
+    prisma.category.findMany({ where: { budgetId, linkedAccountId: null }, orderBy: { createdAt: "asc" } }),
     // Only meaningful for a single selected account — "all accounts" has no one reconciliation
     // history to show.
-    filters.accountId !== "all" ? prisma.reconciliation.findFirst({ where: { accountId: filters.accountId }, orderBy: { createdAt: "desc" } }) : null,
+    filters.accountId !== "all" ? prisma.reconciliation.findFirst({ where: { budgetId, accountId: filters.accountId }, orderBy: { createdAt: "desc" } }) : null,
   ]);
   return {
     transactions,
@@ -93,9 +101,10 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
 }
 
 export async function getReportsData() {
+  const budgetId = await getActiveBudgetId();
   const [transactions, categories] = await Promise.all([
-    prisma.transaction.findMany({ where: { deletedAt: null } }),
-    prisma.category.findMany(),
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
+    prisma.category.findMany({ where: { budgetId } }),
   ]);
   return { transactions, categories };
 }
