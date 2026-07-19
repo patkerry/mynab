@@ -17,6 +17,7 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
   // Alternative to the file picker: paste the file's raw text. Works in environments where the
   // native file dialog is unavailable (e.g. VS Code's Simple Browser / embedded webviews).
   const [pasted, setPasted] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { showToast } = useToast();
@@ -73,17 +74,54 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       </div>
       <div className="field">
         <label>CSV or QFX/OFX file</label>
+        {/* Drag-and-drop zone: works without the native file picker, which can be blocked/greyed on
+            locked-down (MDM-managed) Macs. Dropping a file yields a File object directly. */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const dropped = e.dataTransfer.files?.[0];
+            if (dropped) {
+              setFile(dropped);
+              setPasted("");
+            }
+          }}
+          onClick={() => fileRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragOver ? "var(--accent)" : "var(--line)"}`,
+            borderRadius: 10,
+            padding: "18px 12px",
+            textAlign: "center",
+            cursor: "pointer",
+            background: dragOver ? "var(--accentSoft)" : "var(--paper)",
+            fontSize: 13,
+            color: "var(--ink2)",
+          }}
+        >
+          {file ? (
+            <span style={{ color: "var(--ink)", fontWeight: 600 }}>{file.name}</span>
+          ) : (
+            <>
+              <b>Drag a file here</b> — from Finder or VS Code&rsquo;s file list
+              <br />
+              <span style={{ fontSize: 12, color: "var(--ink3)" }}>or click to choose a file</span>
+            </>
+          )}
+        </div>
         {/* No `accept` restriction on purpose: macOS Finder greys out (makes unselectable) any file
-            whose extension/UTI isn't listed, which blocks legitimate bank exports (.qbo, uppercase
-            .QFX, no-extension, or files macOS reports with an unexpected MIME). Format is detected
-            from the file's actual contents (isQfx in src/lib/qfx.ts) and unsupported files get a
-            clear error on import, so letting the user pick any file is both safer and less confusing. */}
+            whose extension/UTI isn't listed, which blocks legitimate bank exports. Format is detected
+            from the file's actual contents (isQfx in src/lib/qfx.ts). */}
         <input
           ref={fileRef}
           type="file"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          style={{ display: "none" }}
         />
-        {file && <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>Selected: {file.name}</span>}
       </div>
       <div className="field">
         <label>…or paste the file&rsquo;s contents</label>
