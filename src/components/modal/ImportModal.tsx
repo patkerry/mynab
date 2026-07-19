@@ -14,6 +14,9 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
   // readiness and the UI can show what's selected — otherwise clicking Import before picking a
   // file silently no-ops, which reads as "the button doesn't work".
   const [file, setFile] = useState<File | null>(null);
+  // Alternative to the file picker: paste the file's raw text. Works in environments where the
+  // native file dialog is unavailable (e.g. VS Code's Simple Browser / embedded webviews).
+  const [pasted, setPasted] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { showToast } = useToast();
@@ -23,14 +26,14 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       showToast("Pick an account to import into.");
       return;
     }
-    if (!file) {
-      showToast("Choose a CSV or QFX file to import first.");
+    if (!file && !pasted.trim()) {
+      showToast("Choose a file, or paste its contents, to import.");
       return;
     }
     setImporting(true);
     let result;
     try {
-      const text = await file.text();
+      const text = file ? await file.text() : pasted;
       result = await importTransactions(selectedAccountId, text);
     } catch (err) {
       // Never leave the button stuck on "Importing…": surface the failure (e.g. a too-large file
@@ -81,6 +84,29 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         {file && <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>Selected: {file.name}</span>}
+      </div>
+      <div className="field">
+        <label>…or paste the file&rsquo;s contents</label>
+        <textarea
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          disabled={!!file}
+          rows={5}
+          placeholder="Open the CSV/QFX in a text editor, copy everything, and paste here — no file picker needed."
+          style={{
+            width: "100%",
+            fontFamily: "ui-monospace, monospace",
+            fontSize: 12,
+            padding: "8px 10px",
+            borderRadius: 9,
+            border: "1px solid var(--line)",
+            background: file ? "var(--paper)" : "#fff",
+            resize: "vertical",
+          }}
+        />
+        {pasted.trim() && !file && (
+          <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>{pasted.length.toLocaleString()} characters pasted</span>
+        )}
       </div>
       <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
         CSV needs columns Date, Payee, Amount, and optionally Memo. QFX/OFX (Quicken, bank
