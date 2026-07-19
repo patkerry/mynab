@@ -2,19 +2,24 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Wallet, PiggyBank, CreditCard, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot } from "lucide-react";
+import { Wallet, PiggyBank, CreditCard, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
+import { signOutAction } from "@/app/auth-actions";
 import type { Account } from "@/generated/prisma-postgres/client";
 
 export function Sidebar({
   accounts,
   acctBalance,
   netWorth,
+  isAdmin = false,
+  showAuth = false,
 }: {
   accounts: Account[];
   acctBalance: Record<string, number>;
   netWorth: number;
+  isAdmin?: boolean;
+  showAuth?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -73,6 +78,11 @@ export function Sidebar({
         <Link href="/reports" className={`navlink ${pathname === "/reports" ? "active" : ""}`}>
           <PieChart size={17} /> Reports
         </Link>
+        {isAdmin && (
+          <Link href="/admin" className={`navlink ${pathname === "/admin" ? "active" : ""}`}>
+            <Shield size={17} /> Admin
+          </Link>
+        )}
       </nav>
 
       <div
@@ -142,6 +152,14 @@ export function Sidebar({
       <button className="btn btn-ghost" style={{ justifyContent: "center" }} onClick={() => openModal({ type: "reset" })}>
         <RotateCcw size={14} /> Reset demo data
       </button>
+
+      {showAuth && (
+        <form action={signOutAction}>
+          <button type="submit" className="btn btn-ghost" style={{ justifyContent: "center", width: "100%" }}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </form>
+      )}
     </aside>
   );
 }
