@@ -1,13 +1,30 @@
 import "server-only";
 
-// Web (Postgres) active-budget resolver. Split into its own module so the desktop build never
-// imports Auth.js. Implemented fully in the Auth.js wiring step; until then it fails closed so a
-// web deployment can't accidentally run unauthenticated.
+// Web (Postgres) active-budget resolver. Split from budget-context.ts so the desktop build never
+// imports Auth.js. Resolves: Auth.js session -> app User id -> the user's selected budget (from the
+// `activeBudgetId` cookie, VALIDATED against their Membership rows) -> falls back to their first
+// budget. Throws if unauthenticated or the user has no budget (proxy should have redirected first).
+import { cookies } from "next/headers";
+import { auth } from "@/auth";
+import { prisma } from "./db";
 import type { ActiveBudget } from "./budget-context";
 
+export const ACTIVE_BUDGET_COOKIE = "activeBudgetId";
+
 export async function resolveWebActiveBudget(): Promise<ActiveBudget> {
-  throw new Error(
-    "Web auth is not configured yet. getActiveBudget() on the web requires the Auth.js session " +
-      "resolver (added in the multi-user auth step).",
-  );
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Unauthenticated");
+
+  const selected = (await cookies()).get(ACTIVE_BUDGET_COOKIE)?.value;
+
+  // Only honor the cookie if the user actually has a membership for it — otherwise a tampered
+  // cookie could point at someone else's budget.
+  const membership =
+    (selected
+      ? await prisma.membership.findFirst({ where: { userId, budgetId: selected } })
+      : null) ?? (await prisma.membership.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } }));
+
+  if (!membership) throw new Error("User has no budget");
+  return { budgetId: membership.budgetId, role: membership.role };
 }

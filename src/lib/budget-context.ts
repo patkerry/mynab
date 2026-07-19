@@ -53,6 +53,21 @@ export async function getActiveBudgetId(): Promise<string> {
 }
 
 /**
+ * Like getActiveBudget() but returns null instead of throwing when there's no budget to resolve
+ * (unauthenticated web request, or during a static build with no session). Use in the root layout /
+ * shared shell, which renders for public pages like /login and is statically prerendered at build
+ * time — those must not hard-fail just because no user is signed in. Data pages still use the
+ * throwing resolver. Desktop always resolves to the local budget, so this never returns null there.
+ */
+export async function getActiveBudgetOptional(): Promise<ActiveBudget | null> {
+  try {
+    return await getActiveBudget();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the active budget and assert the caller has at least the given permission for it.
  * Throws on insufficient role — call at the top of every mutating server action.
  */

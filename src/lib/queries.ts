@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { getActiveBudgetId } from "./budget-context";
+import { getActiveBudgetId, getActiveBudgetOptional } from "./budget-context";
 import type { Prisma } from "@/generated/prisma-postgres/client";
 import type { AccountFilter, CategoryFilter } from "./types";
 
@@ -7,8 +7,13 @@ import type { AccountFilter, CategoryFilter } from "./types";
 // local budget, web to the user's selected budget. This is the primary guard against one budget's
 // data leaking into another's view — the filter is applied to every table, not just the top-level one.
 
+// Rendered by the root layout for EVERY page — including public /login and statically-prerendered
+// pages that have no session — so it tolerates no active budget by returning an empty sidebar rather
+// than throwing (which would break the web build and the login page).
 export async function getSidebarData() {
-  const budgetId = await getActiveBudgetId();
+  const active = await getActiveBudgetOptional();
+  if (!active) return { accounts: [], acctBalance: {} as Record<string, number>, netWorth: 0 };
+  const budgetId = active.budgetId;
   const [accounts, transactions] = await Promise.all([
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true } }),
