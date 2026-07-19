@@ -70,10 +70,14 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       </div>
       <div className="field">
         <label>CSV or QFX/OFX file</label>
+        {/* No `accept` restriction on purpose: macOS Finder greys out (makes unselectable) any file
+            whose extension/UTI isn't listed, which blocks legitimate bank exports (.qbo, uppercase
+            .QFX, no-extension, or files macOS reports with an unexpected MIME). Format is detected
+            from the file's actual contents (isQfx in src/lib/qfx.ts) and unsupported files get a
+            clear error on import, so letting the user pick any file is both safer and less confusing. */}
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.qfx,.ofx,text/csv"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         {file && <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>Selected: {file.name}</span>}
