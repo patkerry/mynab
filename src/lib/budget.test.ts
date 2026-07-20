@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage, transferLabel } from "./budget";
+import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage, computeQuickBudgetAllocations, transferLabel } from "./budget";
 import type { BudgetInputs } from "./budget";
+import { addMonths } from "./format";
 import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
 
 const MONTH = "2026-07";
@@ -463,5 +464,66 @@ describe("pending (file-imported, not-yet-approved) transactions", () => {
     const breakdownSum = result.breakdown.reduce((s, b) => s + b.amount, 0);
     const paymentsSum = result.payments.reduce((s, p) => s + p.amount, 0);
     expect(breakdownSum - paymentsSum).toBe(derived.activityIn("c_pay", MONTH));
+  });
+});
+
+describe("computeQuickBudgetAllocations", () => {
+  const m1 = addMonths(MONTH, -1);
+  const m2 = addMonths(MONTH, -2);
+  const m3 = addMonths(MONTH, -3);
+
+  it("fills an unbudgeted category with the mean of the previous 3 months' assignments", () => {
+    const inputs = baseInputs(
+      [],
+      [
+        budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: m1, amountCents: 30000 }),
+        budgetEntry({ id: "b2", categoryId: "c_groc", yearMonth: m2, amountCents: 60000 }),
+        budgetEntry({ id: "b3", categoryId: "c_groc", yearMonth: m3, amountCents: 30000 }),
+      ]
+    );
+    expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([{ categoryId: "c_groc", amountCents: 40000 }]);
+  });
+
+  it("treats a month with no assignment as 0 in the /3 average", () => {
+    const inputs = baseInputs(
+      [],
+      [
+        budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: m1, amountCents: 30000 }),
+        budgetEntry({ id: "b2", categoryId: "c_groc", yearMonth: m2, amountCents: 30000 }),
+        // m3 absent → counts as 0 → (30000 + 30000 + 0) / 3 = 20000
+      ]
+    );
+    expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([{ categoryId: "c_groc", amountCents: 20000 }]);
+  });
+
+  it("returns nothing when there is no prior history", () => {
+    expect(computeQuickBudgetAllocations(baseInputs(), MONTH)).toEqual([]);
+  });
+
+  it("never overwrites a category already assigned this month", () => {
+    const inputs = baseInputs(
+      [],
+      [
+        budgetEntry({ id: "b0", categoryId: "c_groc", yearMonth: MONTH, amountCents: 10000 }),
+        budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: m1, amountCents: 30000 }),
+      ]
+    );
+    expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([]);
+  });
+
+  it("skips payment categories and hidden categories even when they have history", () => {
+    const inputs: BudgetInputs = {
+      accounts: [account({ id: "a_card", name: "Visa", type: "CREDIT" })],
+      categories: [
+        category({ id: "c_hidden", groupId: "g1", name: "Old", isHidden: true }),
+        category({ id: "c_pay", groupId: "g_hidden", name: "Visa Payment", linkedAccountId: "a_card" }),
+      ],
+      transactions: [],
+      budgetEntries: [
+        budgetEntry({ id: "b1", categoryId: "c_hidden", yearMonth: m1, amountCents: 30000 }),
+        budgetEntry({ id: "b2", categoryId: "c_pay", yearMonth: m1, amountCents: 30000 }),
+      ],
+    };
+    expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([]);
   });
 });

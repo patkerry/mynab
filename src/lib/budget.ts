@@ -1,4 +1,4 @@
-import { monthKeyOf } from "./format";
+import { addMonths, monthKeyOf } from "./format";
 import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
 
 export type BudgetInputs = {
@@ -371,6 +371,25 @@ export function computeAutoAssignAllocations(inputs: BudgetInputs, month: string
     const give = Math.min(need, rta);
     updates.push({ categoryId: c.id, amountCents: curAssigned + give });
     rta -= give;
+  });
+  return updates;
+}
+
+// Quick-budget: carry the monthly plan forward. For every ordinary category with NOTHING assigned
+// this month yet, average what was ASSIGNED over the previous 3 months (a plain /3 mean — a month
+// with no assignment counts as 0) and propose that as the amount. Categories already budgeted this
+// month are left alone (never clobbered), and payment/hidden categories are skipped. Unlike
+// computeAutoAssignAllocations this is deliberately NOT constrained by readyToAssign — it reproduces
+// your usual plan even before this month's income lands; the Over-Assigned banner surfaces any gap.
+export function computeQuickBudgetAllocations(inputs: BudgetInputs, month: string): AutoAssignUpdate[] {
+  const derived = computeDerived(inputs, month);
+  const prevMonths = [addMonths(month, -1), addMonths(month, -2), addMonths(month, -3)];
+  const updates: AutoAssignUpdate[] = [];
+  inputs.categories.forEach((c) => {
+    if (c.linkedAccountId || c.isHidden) return; // payment categories are derived; hidden are opt-out
+    if (derived.assignedIn(c.id, month) !== 0) return; // don't overwrite an existing assignment
+    const avg = Math.round(prevMonths.reduce((s, m) => s + derived.assignedIn(c.id, m), 0) / prevMonths.length);
+    if (avg > 0) updates.push({ categoryId: c.id, amountCents: avg });
   });
   return updates;
 }

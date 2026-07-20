@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Target, Eye, EyeOff } from "lucide-react";
-import { fmt, parseMoney } from "@/lib/format";
+import { fmt, parseMoney, addMonths } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
 import { useModal } from "./modal/ModalContext";
@@ -48,12 +48,21 @@ export function CatRow({
     setAssigned(c.id, month, parseMoney(draft));
   };
 
+  // "Last month" reference: what was assigned to this category the previous month. Clicking it
+  // copies that amount into this month's assignment (per-row "carry forward"). Reuses setAssigned.
+  const lastAssigned = derived.assignedIn(c.id, addMonths(month, -1));
+  const fillFromLastMonth = () => {
+    if (lastAssigned <= 0) return;
+    setDraft((lastAssigned / 100).toFixed(2));
+    setAssigned(c.id, month, lastAssigned);
+  };
+
   return (
     <div
       className="row-hover"
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 132px 120px 120px",
+        gridTemplateColumns: "1fr 110px 132px 120px 120px",
         gap: 8,
         padding: "10px 14px",
         alignItems: "center",
@@ -111,6 +120,22 @@ export function CatRow({
             {breakdown.paymentsCount > 0 &&
               `${breakdown.paymentsCount} payment${breakdown.paymentsCount > 1 ? "s" : ""} ${fmt(breakdown.paymentsTotal)}`}
           </div>
+        )}
+      </div>
+      <div style={{ textAlign: "right" }}>
+        {lastAssigned > 0 ? (
+          <button
+            onClick={fillFromLastMonth}
+            title={`Assign ${fmt(lastAssigned)} — same as last month`}
+            className="num"
+            style={{ fontSize: 13, color: "var(--ink3)", cursor: "pointer", padding: 0 }}
+          >
+            {fmt(lastAssigned)}
+          </button>
+        ) : (
+          <span className="num" style={{ fontSize: 13, color: "var(--ink3)", opacity: 0.4 }}>
+            —
+          </span>
         )}
       </div>
       <div style={{ textAlign: "right" }}>

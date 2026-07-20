@@ -2,10 +2,11 @@
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
-type Toast = { id: number; message: string };
+type ToastTone = "success" | "error";
+type Toast = { id: number; message: string; tone: ToastTone };
 
 type ToastContextValue = {
-  showToast: (message: string) => void;
+  showToast: (message: string, tone?: ToastTone) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -19,9 +20,10 @@ export function useToast() {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = useCallback((message: string) => {
+  // Default tone stays "error" so existing single-arg callers are unchanged.
+  const showToast = useCallback((message: string, tone: ToastTone = "error") => {
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message }]);
+    setToasts((prev) => [...prev, { id, message, tone }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3200);
   }, []);
 
@@ -36,9 +38,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             style={{
               padding: "12px 16px",
               maxWidth: 320,
-              borderColor: "var(--neg)",
-              background: "var(--negSoft)",
-              color: "var(--negInk)",
+              borderColor: t.tone === "success" ? "var(--pos)" : "var(--neg)",
+              background: t.tone === "success" ? "var(--posSoft)" : "var(--negSoft)",
+              color: t.tone === "success" ? "var(--posInk)" : "var(--negInk)",
               fontSize: 13.5,
               fontWeight: 600,
               boxShadow: "0 8px 24px rgba(20,24,31,.18)",

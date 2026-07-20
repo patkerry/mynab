@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
-import { autoAssignGoals, setGroupHidden } from "@/app/(app)/budget/actions";
+import { useToast } from "./toast/ToastContext";
+import { autoAssignGoals, quickBudget, setGroupHidden } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
 
@@ -40,11 +41,22 @@ export function BudgetView({
   budgetEntries: BudgetEntry[];
 }) {
   const { openModal } = useModal();
+  const { showToast } = useToast();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const derived = useMemo(
     () => computeDerived({ accounts, categories, transactions, budgetEntries }, month),
     [accounts, categories, transactions, budgetEntries, month]
   );
+  const lastMonth = addMonths(month, -1);
+
+  const handleQuickBudget = async () => {
+    const { count, totalCents } = await quickBudget(month);
+    if (count > 0) {
+      showToast(`Budgeted ${fmt(totalCents)} across ${count} categor${count > 1 ? "ies" : "y"} from your 3-month average`, "success");
+    } else {
+      showToast("Nothing to budget — no recent history to average, or every category is already assigned");
+    }
+  };
 
   const rta = derived.readyToAssign;
   const rtaState = rta > 0 ? "pos" : rta < 0 ? "neg" : "zero";
@@ -60,6 +72,7 @@ export function BudgetView({
   // assign to them directly (per spec) and to see the transparency breakdown, so they get a
   // dedicated, always-visible section below the normal groups instead of vanishing entirely.
   const paymentCategories = categories.filter((c) => c.linkedAccountId);
+  const pcLastAssigned = paymentCategories.reduce((s, c) => s + derived.assignedIn(c.id, lastMonth), 0);
   const pcAssigned = paymentCategories.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
   const pcActivity = paymentCategories.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
   const pcAvail = paymentCategories.reduce((s, c) => s + derived.available(c.id, month), 0);
@@ -84,6 +97,9 @@ export function BudgetView({
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={handleQuickBudget} title="Fill every not-yet-budgeted category from its 3-month average">
+            <CalendarClock size={15} /> Quick budget
+          </button>
           <button className="btn btn-ghost" onClick={() => autoAssignGoals(month)}>
             <Sparkles size={15} /> Auto-assign goals
           </button>
@@ -125,8 +141,11 @@ export function BudgetView({
       </div>
 
       <div style={{ padding: "18px 26px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 132px 120px 120px", gap: 8, padding: "0 14px 8px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 132px 120px 120px", gap: 8, padding: "0 14px 8px" }}>
           <span className="eyebrow">Category</span>
+          <span className="eyebrow" style={{ textAlign: "right" }}>
+            Last mo
+          </span>
           <span className="eyebrow" style={{ textAlign: "right" }}>
             Assigned
           </span>
@@ -147,6 +166,7 @@ export function BudgetView({
             const visibleCats = cats.filter((c) => !c.isHidden);
             const hiddenCats = cats.filter((c) => c.isHidden);
             const isExpanded = expandedGroups[g.id] ?? false;
+            const grpLastAssigned = cats.reduce((s, c) => s + derived.assignedIn(c.id, lastMonth), 0);
             const grpAssigned = cats.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
             const grpActivity = cats.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
             const grpAvail = cats.reduce((s, c) => s + derived.available(c.id, month), 0);
@@ -155,7 +175,7 @@ export function BudgetView({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 132px 120px 120px",
+                    gridTemplateColumns: "1fr 110px 132px 120px 120px",
                     gap: 8,
                     padding: "12px 14px",
                     background: "var(--paper)",
@@ -182,6 +202,9 @@ export function BudgetView({
                       </button>
                     )}
                   </div>
+                  <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink3)" }}>
+                    {fmt(grpLastAssigned)}
+                  </span>
                   <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
                     {fmt(grpAssigned)}
                   </span>
@@ -227,7 +250,7 @@ export function BudgetView({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 132px 120px 120px",
+                  gridTemplateColumns: "1fr 110px 132px 120px 120px",
                   gap: 8,
                   padding: "12px 14px",
                   background: "var(--paper)",
@@ -236,6 +259,9 @@ export function BudgetView({
                 }}
               >
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>Credit Card Payments</span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink3)" }}>
+                  {fmt(pcLastAssigned)}
+                </span>
                 <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
                   {fmt(pcAssigned)}
                 </span>

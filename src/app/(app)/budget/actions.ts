@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireBudget } from "@/lib/budget-context";
-import { computeAutoAssignAllocations } from "@/lib/budget";
+import { computeAutoAssignAllocations, computeQuickBudgetAllocations } from "@/lib/budget";
 import type { GoalType } from "@/generated/prisma-postgres/client";
 
 function revalidateAll() {
@@ -51,6 +51,34 @@ export async function autoAssignGoals(month: string) {
     );
   }
   revalidateAll();
+}
+
+// Bulk "carry the plan forward": fund every not-yet-budgeted category from its 3-month average.
+// Mirrors autoAssignGoals' fetch/$transaction/upsert skeleton. Returns a summary for the toast;
+// count 0 means there was no recent history to average (nothing written).
+export async function quickBudget(month: string): Promise<{ count: number; totalCents: number }> {
+  const { budgetId } = await requireBudget("write");
+  const [accounts, categories, transactions, budgetEntries] = await Promise.all([
+    prisma.account.findMany({ where: { budgetId } }),
+    prisma.category.findMany({ where: { budgetId } }),
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
+    prisma.budgetEntry.findMany({ where: { budgetId } }),
+  ]);
+  const updates = computeQuickBudgetAllocations({ accounts, categories, transactions, budgetEntries }, month);
+  if (updates.length) {
+    await prisma.$transaction(
+      updates.map((u) =>
+        prisma.budgetEntry.upsert({
+          where: { categoryId_yearMonth: { categoryId: u.categoryId, yearMonth: month } },
+          update: { amountCents: u.amountCents },
+          create: { budgetId, categoryId: u.categoryId, yearMonth: month, amountCents: u.amountCents },
+        })
+      )
+    );
+    revalidateAll();
+  }
+  // These categories were unassigned before, so each amountCents is entirely newly-budgeted money.
+  return { count: updates.length, totalCents: updates.reduce((s, u) => s + u.amountCents, 0) };
 }
 
 export async function addGroup(name: string) {
