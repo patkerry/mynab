@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil, GripVertical } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
-import { autoAssignGoals, quickBudget, setGroupHidden } from "@/app/(app)/budget/actions";
+import { autoAssignGoals, quickBudget, setGroupHidden, reorderCategories, reorderGroups } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
 
@@ -43,11 +43,47 @@ export function BudgetView({
   const { openModal } = useModal();
   const { showToast } = useToast();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  // Drag-and-drop reorder. Categories reorder within their group; groups reorder among themselves.
+  // The two drag states are independent, so a category drop on a group header (or vice versa) no-ops.
+  const [dragCatId, setDragCatId] = useState<string | null>(null);
+  const [dragGroupId, setDragGroupId] = useState<string | null>(null);
+
+  // Move dragId to just before targetId within an id list.
+  const moveBefore = (ids: string[], dragId: string, targetId: string) => {
+    const rest = ids.filter((id) => id !== dragId);
+    rest.splice(rest.indexOf(targetId), 0, dragId);
+    return rest;
+  };
+  const onCatDrop = (targetId: string, groupCatIds: string[]) => {
+    if (!dragCatId || dragCatId === targetId || !groupCatIds.includes(dragCatId)) {
+      setDragCatId(null);
+      return;
+    }
+    reorderCategories(moveBefore(groupCatIds, dragCatId, targetId));
+    setDragCatId(null);
+  };
+  const onGroupDrop = (targetId: string) => {
+    if (!dragGroupId || dragGroupId === targetId) {
+      setDragGroupId(null);
+      return;
+    }
+    reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId));
+    setDragGroupId(null);
+  };
   const derived = useMemo(
     () => computeDerived({ accounts, categories, transactions, budgetEntries }, month),
     [accounts, categories, transactions, budgetEntries, month]
   );
   const lastMonth = addMonths(month, -1);
+
+  const handleAutoAssign = async () => {
+    const { count, totalCents } = await autoAssignGoals(month);
+    if (count > 0) {
+      showToast(`Auto-assigned ${fmt(totalCents)} across ${count} goal${count > 1 ? "s" : ""}`, "success");
+    } else {
+      showToast("Nothing to auto-assign — no underfunded goals, or nothing left to assign");
+    }
+  };
 
   const handleQuickBudget = async () => {
     const { count, totalCents } = await quickBudget(month);
@@ -100,7 +136,7 @@ export function BudgetView({
           <button className="btn btn-ghost" onClick={handleQuickBudget} title="Fill every not-yet-budgeted category from its 3-month average">
             <CalendarClock size={15} /> Quick budget
           </button>
-          <button className="btn btn-ghost" onClick={() => autoAssignGoals(month)}>
+          <button className="btn btn-ghost" onClick={handleAutoAssign}>
             <Sparkles size={15} /> Auto-assign goals
           </button>
           <button className="btn btn-ghost" onClick={() => openModal({ type: "group" })}>
@@ -112,6 +148,7 @@ export function BudgetView({
       <div style={{ padding: "16px 26px 0" }}>
         <div
           className="card"
+          title="Ready to Assign is your total unassigned money across all months — it isn't scoped to the selected month, so it stays the same as you page between months."
           style={{
             display: "flex",
             alignItems: "center",
@@ -124,6 +161,7 @@ export function BudgetView({
           <div>
             <div className="eyebrow" style={{ color: bannerColor }}>
               {banner.label}
+              <span style={{ color: "var(--ink3)", fontWeight: 600 }}> · all months</span>
             </div>
             <div style={{ fontSize: 13, color: "var(--ink2)", marginTop: 2 }}>{banner.sub}</div>
           </div>
@@ -173,6 +211,13 @@ export function BudgetView({
             return (
               <div key={g.id} className="card" style={{ overflow: "hidden" }}>
                 <div
+                  draggable
+                  onDragStart={() => setDragGroupId(g.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    onGroupDrop(g.id);
+                  }}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 110px 132px 120px 120px",
@@ -184,6 +229,9 @@ export function BudgetView({
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span title="Drag to reorder group" style={{ cursor: "grab", color: "var(--ink3)", display: "grid", placeItems: "center", marginLeft: -4 }}>
+                      <GripVertical size={14} />
+                    </span>
                     <span style={{ fontWeight: 700, fontSize: 13.5 }}>{g.name}</span>
                     <button
                       onClick={() => openModal({ type: "category", groupId: g.id })}
@@ -223,7 +271,14 @@ export function BudgetView({
                   </span>
                 </div>
                 {visibleCats.map((c) => (
-                  <CatRow key={c.id} c={c} month={month} derived={derived} />
+                  <CatRow
+                    key={c.id}
+                    c={c}
+                    month={month}
+                    derived={derived}
+                    onDragStart={() => setDragCatId(c.id)}
+                    onDrop={() => onCatDrop(c.id, cats.map((x) => x.id))}
+                  />
                 ))}
                 {hiddenCats.length > 0 && (
                   <>
@@ -245,7 +300,17 @@ export function BudgetView({
                       {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                       {hiddenCats.length} hidden categor{hiddenCats.length > 1 ? "ies" : "y"}
                     </button>
-                    {isExpanded && hiddenCats.map((c) => <CatRow key={c.id} c={c} month={month} derived={derived} />)}
+                    {isExpanded &&
+                      hiddenCats.map((c) => (
+                        <CatRow
+                          key={c.id}
+                          c={c}
+                          month={month}
+                          derived={derived}
+                          onDragStart={() => setDragCatId(c.id)}
+                          onDrop={() => onCatDrop(c.id, cats.map((x) => x.id))}
+                        />
+                      ))}
                   </>
                 )}
               </div>

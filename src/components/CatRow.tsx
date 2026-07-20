@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Target, Eye, EyeOff, Pencil } from "lucide-react";
+import { Target, Eye, EyeOff, Pencil, GripVertical } from "lucide-react";
 import { fmt, parseMoney, addMonths } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
@@ -14,12 +14,17 @@ export function CatRow({
   month,
   derived,
   breakdown,
+  onDragStart,
+  onDrop,
 }: {
   c: Category;
   month: string;
   derived: Derived;
   breakdown?: CatBreakdown;
+  onDragStart?: () => void;
+  onDrop?: () => void;
 }) {
+  const draggable = !!onDragStart;
   const { openModal } = useModal();
   const assigned = derived.assignedIn(c.id, month);
   const activity = derived.activityIn(c.id, month);
@@ -60,6 +65,17 @@ export function CatRow({
   return (
     <div
       className="row-hover"
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragOver={onDrop ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        onDrop
+          ? (e) => {
+              e.preventDefault();
+              onDrop();
+            }
+          : undefined
+      }
       style={{
         display: "grid",
         gridTemplateColumns: "1fr 110px 132px 120px 120px",
@@ -72,6 +88,11 @@ export function CatRow({
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {draggable && (
+            <span title="Drag to reorder" style={{ cursor: "grab", color: "var(--ink3)", display: "grid", placeItems: "center", marginLeft: -4 }}>
+              <GripVertical size={14} />
+            </span>
+          )}
           <Link
             // Payment categories are never a transaction's own categoryId (see the
             // isPaymentCategory guard in accounts/actions.ts), so filtering the register by
@@ -156,7 +177,15 @@ export function CatRow({
           onFocus={(e) => e.target.select()}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            // Advance to the next category's assign field (all share class "assign-in", rendered in
+            // budget order). Focusing the next input blurs this one, so the onBlur commit still fires;
+            // on the last field just blur to commit.
+            const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input.assign-in"));
+            const next = inputs[inputs.indexOf(e.currentTarget) + 1];
+            if (next) next.focus();
+            else e.currentTarget.blur();
           }}
         />
       </div>

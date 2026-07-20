@@ -134,6 +134,7 @@ model CategoryGroup {
   budget     Budget     @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   name       String
   isHidden   Boolean    @default(false) // e.g. the singleton "Credit Card Payments" group
+  sortOrder  Int        @default(0) // manual drag-and-drop ordering; 0 falls back to createdAt order
   createdAt  DateTime   @default(now())
   categories Category[]
 
@@ -155,6 +156,7 @@ model Category {
   // transaction history, and the category picker are all completely unaffected; a hidden
   // category still works exactly like any other, it just doesn't clutter the main budget list.
   isHidden        Boolean       @default(false)
+  sortOrder       Int           @default(0) // manual drag-and-drop ordering; 0 falls back to createdAt order
   // Set only on a card's auto-created payment category. Its monthly activity is DERIVED
   // (see computeDerived in src/lib/budget.ts) rather than summed from transactions tagged
   // with this category's own id, the way every other category works.

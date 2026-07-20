@@ -29,8 +29,10 @@ export async function setAssigned(categoryId: string, month: string, cents: numb
   revalidateAll();
 }
 
-// Ports autoAssignGoals (ynab-clone.jsx lines 265-286).
-export async function autoAssignGoals(month: string) {
+// Ports autoAssignGoals (ynab-clone.jsx lines 265-286). Returns a summary for a toast: `count` is
+// how many goals were topped up and `totalCents` is the money newly assigned (the delta over what
+// each category already had this month, since computeAutoAssignAllocations returns absolute totals).
+export async function autoAssignGoals(month: string): Promise<{ count: number; totalCents: number }> {
   const { budgetId } = await requireBudget("write");
   const [accounts, categories, transactions, budgetEntries] = await Promise.all([
     prisma.account.findMany({ where: { budgetId } }),
@@ -39,6 +41,10 @@ export async function autoAssignGoals(month: string) {
     prisma.budgetEntry.findMany({ where: { budgetId } }),
   ]);
   const updates = computeAutoAssignAllocations({ accounts, categories, transactions, budgetEntries }, month);
+  const priorForCat = new Map(
+    budgetEntries.filter((e) => e.yearMonth === month).map((e) => [e.categoryId, e.amountCents])
+  );
+  const totalCents = updates.reduce((s, u) => s + (u.amountCents - (priorForCat.get(u.categoryId) || 0)), 0);
   if (updates.length) {
     await prisma.$transaction(
       updates.map((u) =>
@@ -49,8 +55,9 @@ export async function autoAssignGoals(month: string) {
         })
       )
     );
+    revalidateAll();
   }
-  revalidateAll();
+  return { count: updates.length, totalCents };
 }
 
 // Bulk "carry the plan forward": fund every not-yet-budgeted category from its 3-month average.
@@ -183,6 +190,24 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
   await prisma.category.deleteMany({ where: { id: categoryId, budgetId } });
   revalidateAll();
   return { ok: true };
+}
+
+// Persist a new order by writing sortOrder = position for each id, scoped to the budget. The client
+// sends the full ordered id list after a drag; getBudgetPageData reads it back as [sortOrder, createdAt].
+export async function reorderCategories(orderedIds: string[]) {
+  const { budgetId } = await requireBudget("write");
+  await prisma.$transaction(
+    orderedIds.map((id, i) => prisma.category.updateMany({ where: { id, budgetId }, data: { sortOrder: i } }))
+  );
+  revalidateAll();
+}
+
+export async function reorderGroups(orderedIds: string[]) {
+  const { budgetId } = await requireBudget("write");
+  await prisma.$transaction(
+    orderedIds.map((id, i) => prisma.categoryGroup.updateMany({ where: { id, budgetId }, data: { sortOrder: i } }))
+  );
+  revalidateAll();
 }
 
 export async function deleteGroup(groupId: string): Promise<ActionResult> {

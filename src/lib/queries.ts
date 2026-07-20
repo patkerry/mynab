@@ -38,8 +38,8 @@ export async function getSidebarData() {
 export async function getBudgetPageData() {
   const budgetId = await getActiveBudgetId();
   const [groups, categories, transactions, budgetEntries, accounts] = await Promise.all([
-    prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: { createdAt: "asc" } }),
-    prisma.category.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
+    prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.category.findMany({ where: { budgetId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
     prisma.account.findMany({ where: { budgetId } }),
