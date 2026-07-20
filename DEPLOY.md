@@ -37,12 +37,16 @@ The app must **not** connect as the Postgres superuser. Two non-superuser roles 
 - `mynab_app` — app runtime: `SELECT/INSERT/UPDATE/DELETE` only, no DDL, owns nothing.
 - `mynab_migrator` — owns the schema + tables, has DDL, runs migrations only.
 
-Bootstrap them once against the target database (idempotent — safe to re-run to rotate passwords):
+Bootstrap them once against the target database. Safe to re-run: an existing role keeps its password
+(so a re-run can't break a running app) — pass `MIGRATOR_PASSWORD` / `APP_PASSWORD` to rotate one
+deliberately. The printed connection strings preserve the host, port, and query params (e.g.
+`?sslmode=require`) from `ADMIN_DATABASE_URL`.
 
 ```bash
 # ADMIN_DATABASE_URL = an admin/superuser connection to the target DB (create the `mynab` DB first).
-# Passwords are generated and printed unless you pass MIGRATOR_PASSWORD / APP_PASSWORD.
-ADMIN_DATABASE_URL='postgresql://<admin>:<pw>@<host>:5432/mynab' node scripts/create-db-roles.mjs
+# A role's password is generated + printed on first creation; on re-run it is left unchanged unless
+# you explicitly pass MIGRATOR_PASSWORD / APP_PASSWORD.
+ADMIN_DATABASE_URL='postgresql://<admin>:<pw>@<host>:5432/mynab?sslmode=require' node scripts/create-db-roles.mjs
 ```
 
 Copy the two printed connection strings into `DATABASE_URL` and `MIGRATE_DATABASE_URL`.

@@ -15,9 +15,13 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    // The Prisma CLI (migrate/db) needs DDL, so it connects as the migrator role when
-    // MIGRATE_DATABASE_URL is set, falling back to DATABASE_URL. The app runtime never uses this —
-    // it builds its own adapter from DATABASE_URL (the least-privilege app role) in src/lib/db.ts.
-    url: process.env["MIGRATE_DATABASE_URL"] ?? process.env["DATABASE_URL"],
+    // The Prisma CLI (migrate/db) needs DDL, so on Postgres it connects as the migrator role via
+    // MIGRATE_DATABASE_URL, falling back to DATABASE_URL. Gated on the postgres provider (a stray
+    // MIGRATE_DATABASE_URL must never redirect a sqlite command at Postgres) and an empty string is
+    // treated as unset. The app runtime never uses this — it builds its own adapter from
+    // DATABASE_URL (the least-privilege app role) in src/lib/db.ts.
+    url:
+      (provider === "postgres" && process.env["MIGRATE_DATABASE_URL"]) ||
+      process.env["DATABASE_URL"],
   },
 });
