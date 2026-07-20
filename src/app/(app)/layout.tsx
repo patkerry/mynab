@@ -18,10 +18,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isAdmin = session?.user?.isAdmin ?? false;
   }
 
+  // "Reset demo data" wipes the budget and reseeds sample data — useful for demos/dev, but a scary,
+  // destructive footgun in normal use. Off unless ENABLE_DEMO_RESET=true (feature flag).
+  const showDemoReset = process.env.ENABLE_DEMO_RESET === "true";
+
   return (
     <div className="ynab-root">
       <Suspense fallback={null}>
-        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} isAdmin={isAdmin} showAuth={!isDesktop} />
+        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
       </Suspense>
       <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
     </div>

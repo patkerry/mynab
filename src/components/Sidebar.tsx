@@ -14,12 +14,14 @@ export function Sidebar({
   netWorth,
   isAdmin = false,
   showAuth = false,
+  showDemoReset = false,
 }: {
   accounts: Account[];
   acctBalance: Record<string, number>;
   netWorth: number;
   isAdmin?: boolean;
   showAuth?: boolean;
+  showDemoReset?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -149,9 +151,11 @@ export function Sidebar({
         </button>
       </div>
 
-      <button className="btn btn-ghost" style={{ justifyContent: "center" }} onClick={() => openModal({ type: "reset" })}>
-        <RotateCcw size={14} /> Reset demo data
-      </button>
+      {showDemoReset && (
+        <button className="btn btn-ghost" style={{ justifyContent: "center" }} onClick={() => openModal({ type: "reset" })}>
+          <RotateCcw size={14} /> Reset demo data
+        </button>
+      )}
 
       {showAuth && (
         <form action={signOutAction}>
