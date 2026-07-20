@@ -15,6 +15,9 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // The Prisma CLI (migrate/db) needs DDL, so it connects as the migrator role when
+    // MIGRATE_DATABASE_URL is set, falling back to DATABASE_URL. The app runtime never uses this —
+    // it builds its own adapter from DATABASE_URL (the least-privilege app role) in src/lib/db.ts.
+    url: process.env["MIGRATE_DATABASE_URL"] ?? process.env["DATABASE_URL"],
   },
 });
