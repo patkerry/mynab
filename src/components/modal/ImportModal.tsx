@@ -91,36 +91,32 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
               setPasted("");
             }
           }}
-          onClick={() => fileRef.current?.click()}
           style={{
             border: `2px dashed ${dragOver ? "var(--accent)" : "var(--line)"}`,
             borderRadius: 10,
-            padding: "18px 12px",
+            padding: "14px 12px",
             textAlign: "center",
-            cursor: "pointer",
             background: dragOver ? "var(--accentSoft)" : "var(--paper)",
             fontSize: 13,
             color: "var(--ink2)",
+            marginBottom: 8,
           }}
         >
           {file ? (
             <span style={{ color: "var(--ink)", fontWeight: 600 }}>{file.name}</span>
           ) : (
-            <>
-              <b>Drag a file here</b> — from Finder or VS Code&rsquo;s file list
-              <br />
-              <span style={{ fontSize: 12, color: "var(--ink3)" }}>or click to choose a file</span>
-            </>
+            <b>Drag a file here</b>
           )}
         </div>
-        {/* No `accept` restriction on purpose: macOS Finder greys out (makes unselectable) any file
-            whose extension/UTI isn't listed, which blocks legitimate bank exports. Format is detected
-            from the file's actual contents (isQfx in src/lib/qfx.ts). */}
+        {/* Keep the input VISIBLE (not display:none): Safari disables the Upload button in its file
+            picker when the <input type=file> isn't rendered. No `accept` restriction on purpose —
+            macOS Finder greys out files whose extension/UTI isn't listed; format is detected from
+            the file's actual contents (isQfx in src/lib/qfx.ts). */}
+        <label style={{ fontSize: 12, color: "var(--ink3)", display: "block", marginBottom: 4 }}>or choose a file:</label>
         <input
           ref={fileRef}
           type="file"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          style={{ display: "none" }}
         />
       </div>
       <div className="field">
