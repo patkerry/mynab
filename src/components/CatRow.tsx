@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Target, Eye, EyeOff } from "lucide-react";
+import { Target, Eye, EyeOff, Pencil } from "lucide-react";
 import { fmt, parseMoney, addMonths } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
@@ -92,15 +92,24 @@ export function CatRow({
             <Target size={13} />
           </button>
           {/* Payment categories keep their own always-visible section (see BudgetView) and
-              aren't hideable through this button. */}
+              are auto-managed — no hide, rename, or delete affordance. */}
           {!c.linkedAccountId && (
-            <button
-              onClick={() => setCategoryHidden(c.id, !c.isHidden)}
-              title={c.isHidden ? "Unhide category" : "Hide category"}
-              style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
-            >
-              {c.isHidden ? <Eye size={13} /> : <EyeOff size={13} />}
-            </button>
+            <>
+              <button
+                onClick={() => setCategoryHidden(c.id, !c.isHidden)}
+                title={c.isHidden ? "Unhide category" : "Hide category"}
+                style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
+              >
+                {c.isHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+              <button
+                onClick={() => openModal({ type: "editCategory", cat: c })}
+                title="Rename or delete category"
+                style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
+              >
+                <Pencil size={13} />
+              </button>
+            </>
           )}
         </div>
         {goalInfo && (

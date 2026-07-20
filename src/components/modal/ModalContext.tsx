@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { Account, Category } from "@/generated/prisma-postgres/client";
+import type { Account, Category, CategoryGroup } from "@/generated/prisma-postgres/client";
 import { ModalHost } from "./ModalHost";
 
 export type ModalState =
@@ -9,6 +9,8 @@ export type ModalState =
   | { type: "group" }
   | { type: "category"; groupId: string }
   | { type: "goal"; cat: Category }
+  | { type: "editCategory"; cat: Category }
+  | { type: "editGroup"; group: CategoryGroup }
   | { type: "reset" }
   | { type: "reconcile"; accountId: string; accountName: string; currentBalanceCents: number }
   | { type: "import"; accountId: string; accounts: Account[] }

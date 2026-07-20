@@ -144,3 +144,56 @@ export async function setGroupHidden(groupId: string, hidden: boolean) {
   await prisma.category.updateMany({ where: { budgetId, groupId }, data: { isHidden: hidden } });
   revalidateAll();
 }
+
+// Shared success/blocked result for actions that can be refused (see SetGoalResult above for the
+// same idiom).
+export type ActionResult = { ok: true } | { ok: false; reason: string };
+
+export async function renameCategory(categoryId: string, name: string) {
+  const { budgetId } = await requireBudget("write");
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await prisma.category.updateMany({ where: { id: categoryId, budgetId }, data: { name: trimmed } });
+  revalidateAll();
+}
+
+export async function renameGroup(groupId: string, name: string) {
+  const { budgetId } = await requireBudget("write");
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await prisma.categoryGroup.updateMany({ where: { id: groupId, budgetId }, data: { name: trimmed } });
+  revalidateAll();
+}
+
+// Delete is block-if-in-use, matching the DB's onDelete: Restrict on Transaction.category. A
+// category with transaction history can't be deleted (recategorize/delete those first, or just
+// hide it); its BudgetEntry rows cascade away when it is deletable. Payment categories are
+// auto-managed and never user-deletable. The transaction count deliberately includes soft-deleted
+// rows because the FK Restrict counts them too — filtering deletedAt: null here would let the
+// delete reach the DB and throw.
+export async function deleteCategory(categoryId: string): Promise<ActionResult> {
+  const { budgetId } = await requireBudget("write");
+  const cat = await prisma.category.findFirst({ where: { id: categoryId, budgetId }, select: { linkedAccountId: true } });
+  if (!cat) return { ok: false, reason: "Category not found." };
+  if (cat.linkedAccountId != null) return { ok: false, reason: "Credit-card payment categories are managed automatically and can't be deleted." };
+  const txnCount = await prisma.transaction.count({ where: { categoryId } });
+  if (txnCount > 0) {
+    return { ok: false, reason: `Can't delete a category with ${txnCount} transaction${txnCount > 1 ? "s" : ""}. Recategorize or delete them first, or hide the category instead.` };
+  }
+  await prisma.category.deleteMany({ where: { id: categoryId, budgetId } });
+  revalidateAll();
+  return { ok: true };
+}
+
+export async function deleteGroup(groupId: string): Promise<ActionResult> {
+  const { budgetId } = await requireBudget("write");
+  const group = await prisma.categoryGroup.findFirst({ where: { id: groupId, budgetId }, select: { id: true } });
+  if (!group) return { ok: false, reason: "Group not found." };
+  const catCount = await prisma.category.count({ where: { groupId, budgetId } });
+  if (catCount > 0) {
+    return { ok: false, reason: `Can't delete a group with ${catCount} categor${catCount > 1 ? "ies" : "y"}. Delete or move them first.` };
+  }
+  await prisma.categoryGroup.deleteMany({ where: { id: groupId, budgetId } });
+  revalidateAll();
+  return { ok: true };
+}

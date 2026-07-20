@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
@@ -201,6 +201,13 @@ export function BudgetView({
                         {hiddenCats.length === cats.length ? <Eye size={13} /> : <EyeOff size={13} />}
                       </button>
                     )}
+                    <button
+                      onClick={() => openModal({ type: "editGroup", group: g })}
+                      title="Rename or delete group"
+                      style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
+                    >
+                      <Pencil size={13} />
+                    </button>
                   </div>
                   <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink3)" }}>
                     {fmt(grpLastAssigned)}
