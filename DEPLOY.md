@@ -70,7 +70,8 @@ https://<your-domain>/api/auth/callback/google
 
 ## Recommended hardening
 
-- **Fail-fast guard**: refuse to boot the web server if `DB_PROVIDER=sqlite` in a server deployment,
-  so a misconfiguration can't silently disable authentication. (Not yet implemented — worth adding.)
+- **Fail-fast guard** (implemented in `src/instrumentation.ts`): a production server refuses to boot
+  if `DB_PROVIDER=sqlite`, so a misconfiguration can't silently disable authentication. SQLite is
+  still allowed for the Electron desktop build (`ELECTRON_RUN_AS_NODE=1`) and local `dev:sqlite`.
 - Keep the superuser/admin Postgres credentials out of the app environment entirely; they're only
   needed to run `scripts/create-db-roles.mjs`.
