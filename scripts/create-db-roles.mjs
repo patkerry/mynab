@@ -60,9 +60,16 @@ try {
   const migratorPw = await ensureRole(admin, "mynab_migrator", process.env.MIGRATOR_PASSWORD);
   const appPw = await ensureRole(admin, "mynab_app", process.env.APP_PASSWORD);
 
-  // Migrator owns the schema and every existing app object, so `migrate deploy` can ALTER/DROP them.
-  // Reassign only public-schema tables/sequences (never system catalogs, so no REASSIGN OWNED).
-  await admin.query(`ALTER SCHEMA public OWNER TO ${qid("mynab_migrator")}`);
+  // On managed Postgres (Neon, Supabase, RDS) the admin isn't a superuser and isn't a member of the
+  // roles it just created, so it can't reassign ownership to them or set "DEFAULT PRIVILEGES FOR ROLE
+  // migrator" until it's granted membership. Superuser admins (local embedded PG) are unaffected.
+  const who = (await admin.query("SELECT current_user AS u")).rows[0].u;
+  await admin.query(`GRANT ${qid("mynab_migrator")}, ${qid("mynab_app")} TO ${qid(who)}`);
+  // Migrator creates the schema's objects during `migrate deploy` (and thus owns them). It only needs
+  // CREATE on the schema — owning `public` itself is often disallowed on managed Postgres.
+  await admin.query(`GRANT CREATE, USAGE ON SCHEMA public TO ${qid("mynab_migrator")}`);
+  // Reassign any EXISTING app objects (present when reseeding an already-migrated DB) to the migrator
+  // so later migrations can ALTER/DROP them. Empty on a fresh database.
   const objs = await admin.query(
     `SELECT 'TABLE' AS kind, tablename AS name FROM pg_tables WHERE schemaname='public'
      UNION ALL
