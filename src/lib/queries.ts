@@ -47,6 +47,18 @@ export async function getBudgetPageData() {
   return { groups, categories, transactions, budgetEntries, accounts };
 }
 
+// Structure-only data for the Categories management page — groups + categories in display order, no
+// amounts. Visible groups only (the hidden "Credit Card Payments" group and its auto-managed payment
+// categories stay off this page).
+export async function getCategoriesData() {
+  const budgetId = await getActiveBudgetId();
+  const [groups, categories] = await Promise.all([
+    prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.category.findMany({ where: { budgetId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+  ]);
+  return { groups, categories };
+}
+
 export const ACCOUNT_TXNS_PAGE_SIZE = 50;
 
 // "none" (Uncategorized) must match categoryId === null but only for NORMAL transactions —

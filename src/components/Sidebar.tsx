@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
+import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Tags, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { signOutAction } from "@/app/auth-actions";
@@ -77,6 +77,9 @@ export function Sidebar({
         </Link>
         <Link href="/accounts" className={`navlink ${onAccounts ? "active" : ""}`}>
           <ArrowLeftRight size={17} /> Transactions
+        </Link>
+        <Link href="/categories" className={`navlink ${pathname === "/categories" ? "active" : ""}`}>
+          <Tags size={17} /> Categories
         </Link>
         <Link href="/reports" className={`navlink ${pathname === "/reports" ? "active" : ""}`}>
           <PieChart size={17} /> Reports
