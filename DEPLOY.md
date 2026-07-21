@@ -57,6 +57,7 @@ request after a nap is a slow (~30–60s) cold start.
 | `AUTH_SECRET` | random secret for Auth.js (`openssl rand -base64 32`) |
 | `AUTH_GOOGLE_ID` | Google OAuth client id |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
+| `AUTH_ALLOWED_EMAILS` | *(optional)* comma-separated allowlist of emails permitted to sign in (case-insensitive). Unset = any Google account may sign in (each gets their own isolated budget); set it to lock the instance to just your address(es). |
 
 `trustHost: true` is already set (`src/auth.config.ts`), so Auth.js works off-Vercel without extra
 host config.

@@ -27,3 +27,7 @@ services:
         sync: false
       - key: AUTH_GOOGLE_SECRET
         sync: false
+      # Optional: comma-separated allowlist of emails permitted to sign in (case-insensitive).
+      # Leave unset to allow any Google account; set it to lock the instance to just your address(es).
+      - key: AUTH_ALLOWED_EMAILS
+        sync: false
