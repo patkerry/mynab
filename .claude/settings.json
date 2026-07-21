@@ -1,11 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install *)",
-      "Bash(command -v service)",
-      "Bash(service --status-all)",
-      "Bash(systemctl list-units *)",
-      "Read(//etc/**)"
+      "Bash(npm install *)"
     ]
   }
 }
