@@ -19,6 +19,8 @@ enum AccountType {
   CHECKING
   SAVINGS
   CREDIT
+  INVESTMENT
+  LOAN
 }
 
 enum TransactionKind {

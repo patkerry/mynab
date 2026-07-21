@@ -38,6 +38,11 @@ function cumulativeUpTo(byMonth: Map<string, Map<string, number>>, key: string, 
 export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   const { accounts, categories, transactions, budgetEntries } = inputs;
 
+  // Off-budget (tracking) accounts — Investment/Loan. Their balances belong in net worth, but their
+  // transactions are excluded from the zero-based budget: category activity, income, and Ready-to-
+  // Assign. Gated on onBudget, so a budget with only on-budget accounts is completely unaffected.
+  const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
+
   const acctBalance: Record<string, number> = {};
   accounts.forEach((a) => (acctBalance[a.id] = 0));
   transactions.forEach((t) => {
@@ -68,7 +73,10 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
     if (c.linkedAccountId) accountIdToPaymentCategoryId.set(c.linkedAccountId, c.id);
   });
 
-  const activityByMonth = buildActivityByMonth(transactions, accountIdToPaymentCategoryId);
+  const activityByMonth = buildActivityByMonth(
+    transactions.filter((t) => !offBudget.has(t.accountId)),
+    accountIdToPaymentCategoryId
+  );
 
   const assignedIn = (catId: string, ym: string) => budgetedByMonth.get(ym)?.get(catId) || 0;
   const assignedUpTo = (catId: string, ym: string) => cumulativeUpTo(budgetedByMonth, catId, ym);
@@ -77,7 +85,7 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   const available = (catId: string, ym: string) => assignedUpTo(catId, ym) + activityUpTo(catId, ym);
 
   const totalIncome = transactions
-    .filter((t) => t.kind === "INCOME" && !t.pending)
+    .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
     .reduce((s, t) => s + t.amountCents, 0);
   const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
   const readyToAssign = totalIncome - totalAssigned;

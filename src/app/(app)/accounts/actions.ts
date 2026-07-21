@@ -381,11 +381,16 @@ export async function addAccount(input: { name: string; type: AccountType; balan
   const { budgetId } = await requireBudget("write");
   const name = input.name.trim();
   if (!name) return;
-  const cents = parseMoney(input.balance);
+  // Investment/Loan are off-budget tracking accounts: their balance counts toward net worth, but
+  // their transactions stay out of the budget (see the offBudget filter in computeDerived).
+  const offBudget = input.type === "INVESTMENT" || input.type === "LOAN";
+  // A loan's balance is the amount owed — store it negative (a liability) regardless of sign entered.
+  const cents = input.type === "LOAN" ? -Math.abs(parseMoney(input.balance)) : parseMoney(input.balance);
   await prisma.$transaction(async (tx) => {
-    const account = await tx.account.create({ data: { budgetId, name, type: input.type, onBudget: true } });
+    const account = await tx.account.create({ data: { budgetId, name, type: input.type, onBudget: !offBudget } });
     if (cents !== 0) {
-      const isIncome = cents > 0 && input.type !== "CREDIT";
+      // On-budget positive opening balance is assignable income; a tracking account's balance is not.
+      const isIncome = cents > 0 && !offBudget && input.type !== "CREDIT";
       await tx.transaction.create({
         data: {
           budgetId,

@@ -71,7 +71,16 @@ try {
   for (const { kind, name } of objs.rows) {
     await admin.query(`ALTER ${kind} public.${qid(name)} OWNER TO ${qid("mynab_migrator")}`);
   }
-  console.log(`migrator now owns public schema + ${objs.rowCount} objects`);
+  // Enum types too (e.g. AccountType) — otherwise a later `ALTER TYPE ... ADD VALUE` migration fails
+  // with "must be owner of type".
+  const types = await admin.query(
+    `SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+     WHERE n.nspname = 'public' AND t.typtype = 'e'`,
+  );
+  for (const { typname } of types.rows) {
+    await admin.query(`ALTER TYPE public.${qid(typname)} OWNER TO ${qid("mynab_migrator")}`);
+  }
+  console.log(`migrator now owns public schema + ${objs.rowCount} objects + ${types.rowCount} enum types`);
 
   // App: connect + read/write existing objects only. No DDL, no ownership.
   await admin.query(`GRANT CONNECT ON DATABASE ${qid(dbName)} TO mynab_app`);

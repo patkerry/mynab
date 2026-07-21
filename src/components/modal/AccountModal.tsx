@@ -9,7 +9,15 @@ const TYPE_OPTIONS: [AccountType, string][] = [
   ["CHECKING", "Checking"],
   ["SAVINGS", "Savings"],
   ["CREDIT", "Credit"],
+  ["INVESTMENT", "Investment"],
+  ["LOAN", "Loan"],
 ];
+
+const BALANCE_HINT: Partial<Record<AccountType, string>> = {
+  INVESTMENT: "Tracked toward net worth — its transactions aren't budgeted.",
+  LOAN: "Enter the amount owed — tracked as a liability toward net worth, not budgeted.",
+};
+const DEFAULT_HINT = "A positive starting balance becomes income you can assign.";
 
 export function AccountModal({ close }: { close: () => void }) {
   const [name, setName] = useState("");
@@ -43,7 +51,7 @@ export function AccountModal({ close }: { close: () => void }) {
         <input value={bal} onChange={(e) => setBal(e.target.value)} placeholder="0.00" className="num" />
       </div>
       <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
-        A positive starting balance becomes income you can assign.
+        {BALANCE_HINT[type] ?? DEFAULT_HINT}
       </p>
     </ModalShell>
   );

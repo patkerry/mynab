@@ -22,18 +22,23 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { range: rangeParam } = await searchParams;
   const range: ReportRange = (RANGES.some((r) => r.key === rangeParam) ? rangeParam : "6m") as ReportRange;
   const months = monthsForRange(range, curYM());
-  const { transactions, categories, budgetEntries } = await getReportsData();
+  const { transactions, categories, budgetEntries, accounts } = await getReportsData();
+
+  // Off-budget (Investment/Loan) accounts belong in net worth but not in spending/income — feed the
+  // budget-facing reports only on-budget transactions; net worth sees everything.
+  const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
+  const onBudgetTxns = transactions.filter((t) => !offBudget.has(t.accountId));
 
   return (
     <ReportsView
       range={range}
-      summary={summary(transactions, months)}
-      spendByCat={spendByCategory(transactions, categories, months)}
-      incomeExpense={incomeVsSpending(transactions, months)}
+      summary={summary(onBudgetTxns, months)}
+      spendByCat={spendByCategory(onBudgetTxns, categories, months)}
+      incomeExpense={incomeVsSpending(onBudgetTxns, months)}
       netWorth={netWorthTrend(transactions, months)}
-      catTrend={categorySpendTrend(transactions, categories, months)}
-      merchants={topMerchants(transactions, months)}
-      budgetVsActual={budgetVsActual(transactions, categories, budgetEntries, months)}
+      catTrend={categorySpendTrend(onBudgetTxns, categories, months)}
+      merchants={topMerchants(onBudgetTxns, months)}
+      budgetVsActual={budgetVsActual(onBudgetTxns, categories, budgetEntries, months)}
     />
   );
 }

@@ -107,10 +107,11 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
 
 export async function getReportsData() {
   const budgetId = await getActiveBudgetId();
-  const [transactions, categories, budgetEntries] = await Promise.all([
+  const [transactions, categories, budgetEntries, accounts] = await Promise.all([
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.category.findMany({ where: { budgetId } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
+    prisma.account.findMany({ where: { budgetId } }),
   ]);
-  return { transactions, categories, budgetEntries };
+  return { transactions, categories, budgetEntries, accounts };
 }

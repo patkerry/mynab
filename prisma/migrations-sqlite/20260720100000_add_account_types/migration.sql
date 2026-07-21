@@ -1,0 +1,4 @@
+-- Investment (asset) and Loan (liability) account types. SQLite has no native enum — Prisma stores
+-- AccountType as a plain TEXT column with no DB-level constraint, so widening the enum is a
+-- client-only change. No schema change is needed here; this migration exists to keep the sqlite and
+-- postgres migration histories parallel.

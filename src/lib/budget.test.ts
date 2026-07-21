@@ -527,3 +527,39 @@ describe("computeQuickBudgetAllocations", () => {
     expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([]);
   });
 });
+
+describe("off-budget (tracking) accounts", () => {
+  it("count toward net worth but not income / ready-to-assign / category activity", () => {
+    const inputs: BudgetInputs = {
+      accounts: [
+        account({ id: "a_check", name: "Checking", type: "CHECKING" }),
+        account({ id: "a_inv", name: "401k", type: "INVESTMENT", onBudget: false }),
+        account({ id: "a_loan", name: "Mortgage", type: "LOAN", onBudget: false }),
+      ],
+      categories: [category({ id: "c_groc", groupId: "g1", name: "Groceries" })],
+      transactions: [
+        txn({ id: "t_pay", accountId: "a_check", date: `${MONTH}-01`, amountCents: 500000, kind: "INCOME", categoryId: null }),
+        txn({ id: "t_inv", accountId: "a_inv", date: `${MONTH}-02`, amountCents: 5000000, kind: "INCOME", categoryId: null }),
+        txn({ id: "t_loan", accountId: "a_loan", date: `${MONTH}-02`, amountCents: -24000000, kind: "NORMAL", categoryId: null }),
+        // A categorized spend recorded on an off-budget account must NOT hit the budget.
+        txn({ id: "t_off_groc", accountId: "a_inv", date: `${MONTH}-05`, amountCents: -3000, kind: "NORMAL", categoryId: "c_groc" }),
+      ],
+      budgetEntries: [],
+    };
+    const d = computeDerived(inputs, MONTH);
+    expect(d.netWorth).toBe(500000 + 5000000 - 24000000 - 3000); // every account's balance
+    expect(d.totalIncome).toBe(500000); // investment "income" excluded
+    expect(d.readyToAssign).toBe(500000);
+    expect(d.activityIn("c_groc", MONTH)).toBe(0); // off-budget categorized spend excluded
+  });
+
+  it("still counts a categorized spend on an on-budget account (regression guard)", () => {
+    const inputs: BudgetInputs = {
+      accounts: [account({ id: "a_check", name: "Checking", type: "CHECKING" })],
+      categories: [category({ id: "c_groc", groupId: "g1", name: "Groceries" })],
+      transactions: [txn({ id: "t1", accountId: "a_check", date: `${MONTH}-05`, amountCents: -3000, kind: "NORMAL", categoryId: "c_groc" })],
+      budgetEntries: [],
+    };
+    expect(computeDerived(inputs, MONTH).activityIn("c_groc", MONTH)).toBe(-3000);
+  });
+});

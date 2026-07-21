@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Wallet, PiggyBank, CreditCard, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
+import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { signOutAction } from "@/app/auth-actions";
@@ -27,7 +27,8 @@ export function Sidebar({
   const searchParams = useSearchParams();
   const { openModal } = useModal();
 
-  const icon = (t: Account["type"]) => (t === "SAVINGS" ? PiggyBank : t === "CREDIT" ? CreditCard : Wallet);
+  const icon = (t: Account["type"]) =>
+    t === "SAVINGS" ? PiggyBank : t === "CREDIT" ? CreditCard : t === "INVESTMENT" ? TrendingUp : t === "LOAN" ? Landmark : Wallet;
 
   const onAccounts = pathname === "/accounts";
   const currentAccount = searchParams.get("account") || "all";
