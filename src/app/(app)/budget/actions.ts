@@ -178,14 +178,24 @@ export async function renameGroup(groupId: string, name: string) {
 // auto-managed and never user-deletable. The transaction count deliberately includes soft-deleted
 // rows because the FK Restrict counts them too — filtering deletedAt: null here would let the
 // delete reach the DB and throw.
+// Delete only a category that has NO history — no transactions and no budget assignments. A category
+// that was ever spent in or assigned to would take its history with it (transactions are FK-Restricted;
+// budgetEntry rows cascade), silently changing past months. Anything with history must be HIDDEN
+// instead (a display-only toggle that preserves every number). Payment categories are never deletable.
 export async function deleteCategory(categoryId: string): Promise<ActionResult> {
   const { budgetId } = await requireBudget("write");
-  const cat = await prisma.category.findFirst({ where: { id: categoryId, budgetId }, select: { linkedAccountId: true } });
+  const cat = await prisma.category.findFirst({ where: { id: categoryId, budgetId }, select: { name: true, linkedAccountId: true } });
   if (!cat) return { ok: false, reason: "Category not found." };
   if (cat.linkedAccountId != null) return { ok: false, reason: "Credit-card payment categories are managed automatically and can't be deleted." };
-  const txnCount = await prisma.transaction.count({ where: { categoryId } });
-  if (txnCount > 0) {
-    return { ok: false, reason: `Can't delete a category with ${txnCount} transaction${txnCount > 1 ? "s" : ""}. Recategorize or delete them first, or hide the category instead.` };
+  const [txnCount, entryCount] = await Promise.all([
+    prisma.transaction.count({ where: { categoryId } }),
+    prisma.budgetEntry.count({ where: { categoryId } }),
+  ]);
+  if (txnCount > 0 || entryCount > 0) {
+    const parts: string[] = [];
+    if (txnCount > 0) parts.push(`${txnCount} transaction${txnCount > 1 ? "s" : ""}`);
+    if (entryCount > 0) parts.push(`${entryCount} month${entryCount > 1 ? "s" : ""} of budget history`);
+    return { ok: false, reason: `Can't delete "${cat.name}" — it has ${parts.join(" and ")}. Hide it instead to keep your history intact.` };
   }
   await prisma.category.deleteMany({ where: { id: categoryId, budgetId } });
   revalidateAll();
