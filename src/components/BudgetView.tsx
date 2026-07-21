@@ -101,10 +101,9 @@ export function BudgetView({
     neg: { label: "Over-Assigned", sub: "You've assigned more than you have" },
     zero: { label: "All Money Assigned", sub: "Every dollar has a job" },
   }[rtaState];
-  const bannerColor = rtaState === "pos" ? "var(--pos)" : rtaState === "neg" ? "var(--neg)" : "var(--accent)";
-  // Bright-on-dark state colors for the bold hero banner.
-  const bannerBright = rtaState === "pos" ? "#4ade80" : rtaState === "neg" ? "#fb7185" : "#a5b4fc";
-  const heroNum = rtaState === "neg" ? "#fb7185" : "#ffffff";
+  // Sage/state eyebrow + warm-ink number for the calm hero (rust when over-assigned).
+  const bannerColor = rtaState === "pos" ? "var(--pos)" : rtaState === "neg" ? "var(--neg)" : "var(--accentDeep)";
+  const heroNum = rtaState === "neg" ? "var(--neg)" : "var(--ink)";
 
   // Payment categories live in a hidden CategoryGroup (excluded from `groups`) so they don't
   // get a manageable, renameable group header — but they still need a place for users to
@@ -158,20 +157,20 @@ export function BudgetView({
             justifyContent: "space-between",
             flexWrap: "wrap",
             gap: 16,
-            padding: "28px 32px",
-            border: "none",
-            background: "linear-gradient(120deg, #171b26 0%, #1f2740 100%)",
-            boxShadow: "0 10px 30px rgba(16,24,40,0.18)",
+            padding: "30px 34px",
+            borderRadius: 26,
+            border: "1px solid var(--line)",
+            background: "radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--accent) 22%, var(--surface)) 0%, var(--surface) 55%)",
           }}
         >
           <div>
-            <div className="eyebrow" style={{ color: bannerBright, letterSpacing: "0.1em" }}>
+            <div className="eyebrow" style={{ color: bannerColor, letterSpacing: "0.1em" }}>
               {banner.label}
-              <span style={{ color: "rgba(255,255,255,0.4)" }}> · all months</span>
+              <span style={{ color: "var(--ink3)" }}> · all months</span>
             </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{banner.sub}</div>
+            <div style={{ fontSize: 14, color: "var(--ink2)", marginTop: 4 }}>{banner.sub}</div>
           </div>
-          <div className="num" style={{ fontSize: 58, fontWeight: 700, color: heroNum, letterSpacing: "-0.03em", lineHeight: 1 }}>
+          <div className="num" style={{ fontSize: 60, fontWeight: 700, color: heroNum, letterSpacing: "-0.03em", lineHeight: 1 }}>
             {fmt(rta)}
           </div>
         </div>

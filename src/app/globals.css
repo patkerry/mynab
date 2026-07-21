@@ -1,22 +1,51 @@
 :root {
-  /* Royal-blue "classic" theme: blue accent on cool-gray neutrals. Money semantics (pos/neg/warn)
-     unchanged. Palette is centralized here — everything else reads these tokens. */
-  --ink: #151a23;
-  --ink2: #5c6675;
-  --ink3: #909aa8;
-  --paper: #f6f8fc;
-  --surface: #ffffff;
-  --line: #e9edf3;
-  --pos: #1c9c64;
-  --posSoft: #e3f2ea;
-  --posInk: #0e6b42;
-  --neg: #cb4e33;
-  --negSoft: #fae7e1;
-  --negInk: #8f3521;
-  --accent: #2563eb;
-  --accentSoft: #e7eefc;
-  --warn: #b9821b;
-  --warnSoft: #fbf0d8;
+  /* "Warm organic / calm money" theme: sage accent on warm sand/clay neutrals — deliberately not
+     cold fintech blue. Palette is centralized here; everything reads these tokens. */
+  --ink: #2a2620;
+  --ink2: #7c7264;
+  --ink3: #a99e8c;
+  --paper: #ece4d6;
+  --surface: #f8f4ec;
+  --line: #e2dac9;
+  --pos: #4e7a52;
+  --posSoft: #e5ecdd;
+  --posInk: #3c5e40;
+  --neg: #b4552f;
+  --negSoft: #f3e2d7;
+  --negInk: #8a3f22;
+  --accent: #5f7355;
+  --accentSoft: #e6ece0;
+  --accentDeep: #495a41;
+  --clay: #bd6f4c;
+  --warn: #b98a38;
+  --warnSoft: #f4ead2;
+  --shadow: 0 2px 4px rgba(74, 60, 40, 0.05), 0 14px 34px rgba(74, 60, 40, 0.09);
+  --font-display: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", "Segoe UI", system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+}
+/* Cozy warm-dark (espresso, not cold black). Applies on OS dark preference. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #f2ebdd;
+    --ink2: #a99e8c;
+    --ink3: #7c7264;
+    --paper: #201c17;
+    --surface: #2b2620;
+    --line: #3a342b;
+    --pos: #8fb383;
+    --posSoft: #2f3a2b;
+    --posInk: #cfe0c4;
+    --neg: #db8a63;
+    --negSoft: #3a2b22;
+    --negInk: #f0cdb8;
+    --accent: #93a687;
+    --accentSoft: #333d2c;
+    --accentDeep: #b0c2a2;
+    --clay: #d98c66;
+    --warn: #d3ad63;
+    --warnSoft: #3a3120;
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.25), 0 14px 34px rgba(0, 0, 0, 0.35);
+  }
 }
 
 html,
@@ -45,7 +74,17 @@ a {
   font-feature-settings: "cv05", "ss01";
   -webkit-font-smoothing: antialiased;
 }
+body {
+  font-family: var(--font-body);
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
 .num {
+  font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -225,8 +264,8 @@ select {
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 16px rgba(16, 24, 40, 0.05);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
 }
 .mono-tick {
   font-variant-numeric: tabular-nums;
