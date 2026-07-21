@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, Check, CheckCheck, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, getReconcileInfo, findPossibleDuplicate } from "@/app/(app)/accounts/actions";
+import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
@@ -42,8 +42,27 @@ export function AccountsView({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const { openModal } = useModal();
   const { showToast } = useToast();
+
+  // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess).
+  const approvable = (t: Transaction) => t.pending && t.categoryId !== null && t.kind === "NORMAL";
+  const approvableIds = transactions.filter(approvable).map((t) => t.id);
+  const toggleSel = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const allSelected = approvableIds.length > 0 && approvableIds.every((id) => selected.has(id));
+  const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(approvableIds));
+  const approveSelected = async () => {
+    const ids = [...selected];
+    const { approved } = await approvePending(ids);
+    setSelected(new Set());
+    showToast(approved > 0 ? `Approved ${approved} transaction${approved > 1 ? "s" : ""}` : "Nothing to approve", approved > 0 ? "success" : "error");
+  };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
   // catName (ynab-clone.jsx line 542), where both cases carried categoryId: null.
@@ -127,6 +146,7 @@ export function AccountsView({
             <option value="all">All categories</option>
             <option value="income">Ready to Assign</option>
             <option value="none">Uncategorized</option>
+            <option value="pending">Needs review</option>
             <optgroup label="Category">
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -161,6 +181,11 @@ export function AccountsView({
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          {selected.size > 0 && (
+            <button className="btn btn-primary" onClick={approveSelected}>
+              <CheckCheck size={15} /> Approve selected ({selected.size})
+            </button>
+          )}
           {accountFilter !== "all" && (
             <button className="btn btn-ghost" onClick={handleReconcile}>
               <ScrollText size={15} /> Reconcile
@@ -188,8 +213,14 @@ export function AccountsView({
 
       <div className="card" style={{ overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: TXN_GRID, gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--line)", background: "var(--paper)" }}>
-          {["Date", "Payee", "Category", "Memo", "Account", "Amount", ""].map((h, i) => (
-            <span key={i} className="eyebrow" style={{ textAlign: i === 5 ? "right" : "left" }}>
+          <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {approvableIds.length > 0 && (
+              <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Select all reviewable" style={{ cursor: "pointer" }} />
+            )}
+            Date
+          </span>
+          {["Payee", "Category", "Memo", "Account", "Amount", ""].map((h) => (
+            <span key={h || "actions"} className="eyebrow" style={{ textAlign: h === "Amount" ? "right" : "left" }}>
               {h}
             </span>
           ))}
@@ -253,7 +284,17 @@ export function AccountsView({
                 cursor: transfer ? "default" : "pointer",
               }}
             >
-              <span className="num" style={{ color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
+              <span className="num" style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                {approvable(t) && (
+                  <input
+                    type="checkbox"
+                    checked={selected.has(t.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSel(t.id)}
+                    title="Select for approval"
+                    style={{ cursor: "pointer" }}
+                  />
+                )}
                 {dateLabel(t.date)}
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>

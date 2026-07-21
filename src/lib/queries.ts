@@ -74,6 +74,8 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   else if (filters.categoryId === "none") {
     where.categoryId = null;
     where.kind = "NORMAL";
+  } else if (filters.categoryId === "pending") {
+    where.pending = true; // "Needs review" — imported rows not yet approved
   } else if (filters.categoryId !== "all") {
     where.categoryId = filters.categoryId;
   }

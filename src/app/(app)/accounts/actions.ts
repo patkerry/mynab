@@ -244,6 +244,27 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   return true;
 }
 
+// Bulk-approve pending imported rows that already have a category (accepting the auto-guesses):
+// clears `pending` and runs the same overspend coverage a single-row save (updateTransaction) does.
+// Budget-scoped; uncategorized, already-approved, or other-budget ids are ignored. Returns the count.
+export async function approvePending(ids: string[]): Promise<{ approved: number }> {
+  const { budgetId } = await requireBudget("write");
+  if (ids.length === 0) return { approved: 0 };
+  const rows = await prisma.transaction.findMany({
+    where: { id: { in: ids }, budgetId, pending: true, categoryId: { not: null } },
+    select: { id: true, accountId: true, categoryId: true, date: true },
+  });
+  if (rows.length === 0) return { approved: 0 };
+  await prisma.$transaction(async (tx) => {
+    for (const r of rows) {
+      await tx.transaction.update({ where: { id: r.id }, data: { pending: false } });
+      await applyOverspendCoverage(tx, budgetId, r.accountId, r.categoryId, r.date);
+    }
+  });
+  revalidateAll();
+  return { approved: rows.length };
+}
+
 export type ToggleClearedResult = { ok: true } | { ok: false; reason: string };
 
 // Every approved (cleared) transaction needs a category — otherwise a credit card purchase

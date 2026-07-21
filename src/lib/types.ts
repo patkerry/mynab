@@ -1,5 +1,5 @@
 export type AccountFilter = "all" | string;
-export type CategoryFilter = "all" | "income" | "none" | string;
+export type CategoryFilter = "all" | "income" | "none" | "pending" | string;
 
 // Shape produced/consumed by TxnEditorRow; categoryId is one of:
 // "income" (inflow), "" (uncategorized), "transfer:<accountId>", or a real category id.
