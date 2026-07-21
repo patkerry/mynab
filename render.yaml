@@ -1,0 +1,29 @@
+# Render Blueprint — free deploy of the mynab web app (pair with a free Neon Postgres).
+# In Render: New → Blueprint → select this repo. It creates the web service below; then set the
+# secret env vars (DATABASE_URL, MIGRATE_DATABASE_URL, Google OAuth) in the dashboard — see DEPLOY.md.
+# Note: the free plan sleeps after ~15 min idle (first request after that is a slow cold start).
+services:
+  - type: web
+    name: mynab
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_PROVIDER
+        value: postgres
+      # Auth.js session secret — Render generates a strong value on first deploy.
+      - key: AUTH_SECRET
+        generateValue: true
+      # Set these in the dashboard (marked secret): Neon connection strings + Google OAuth creds.
+      - key: DATABASE_URL # Neon, as the least-privilege mynab_app role
+        sync: false
+      - key: MIGRATE_DATABASE_URL # Neon, as the mynab_migrator role (migrations only)
+        sync: false
+      - key: AUTH_GOOGLE_ID
+        sync: false
+      - key: AUTH_GOOGLE_SECRET
+        sync: false

@@ -16,6 +16,37 @@ platforms like Vercel Hobby.
 collides with Vercel's serverless payload limit. Choose this only if you move the import to a route
 handler with direct upload, or accept the smaller limit.
 
+## Free deploy: Render + Neon (step by step)
+
+Fully free: **Render free web service** (a real Node server, so the 10mb import works and `better-sqlite3`
+compiles fine) + **Neon free Postgres** (persists — unlike Render's own free Postgres, which is deleted
+after 90 days). Tradeoff: the Render free web service **sleeps after ~15 min idle**, so the first
+request after a nap is a slow (~30–60s) cold start.
+
+1. **Neon** — create a project (region near you). Copy the **admin/owner** connection string (it looks
+   like `postgresql://<owner>:<pw>@<host>/<db>?sslmode=require`). This is only used to bootstrap roles.
+2. **Create the DB roles** (from your machine, once):
+   ```bash
+   ADMIN_DATABASE_URL='postgresql://<owner>:<pw>@<host>/<db>?sslmode=require' node scripts/create-db-roles.mjs
+   ```
+   It prints two connection strings — one for `mynab_app` (runtime) and one for `mynab_migrator`
+   (migrations) — with `?sslmode=require` preserved. It also transfers enum-type ownership to the
+   migrator so the `AccountType` migration can run.
+3. **Run migrations** against Neon (as the migrator):
+   ```bash
+   MIGRATE_DATABASE_URL='<the mynab_migrator string>' DB_PROVIDER=postgres npx prisma migrate deploy
+   ```
+4. **Render** — New → **Blueprint**, pick this repo (it reads `render.yaml`). It creates the web service
+   and auto-generates `AUTH_SECRET`. Then in the service's **Environment**, set the secrets:
+   `DATABASE_URL` = the `mynab_app` string, `MIGRATE_DATABASE_URL` = the `mynab_migrator` string,
+   `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` = your Google OAuth creds.
+5. **Google OAuth** — in Google Cloud Console, add the Render URL to the client's Authorized redirect
+   URIs: `https://<your-service>.onrender.com/api/auth/callback/google`.
+6. **Deploy.** The build runs `npm run build` (which now `prisma generate`s first, then `next build`);
+   start is `next start`. Visit the URL and sign in with Google.
+
+(To skip cold starts or the size cap entirely, the paid Render/Railway tier keeps it always-on.)
+
 ## Required environment variables
 
 | Variable | Value |

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:sqlite": "DB_PROVIDER=sqlite DATABASE_URL=file:./prisma/dev.db next dev",
-    "build": "next build",
+    "build": "npm run db:generate && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "npm run check:schema-parity && vitest run",
