@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { ModalProvider } from "@/components/modal/ModalContext";
 import { ToastProvider } from "@/components/toast/ToastContext";
 
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"] });
+// Inter for body/UI; Space Grotesk as the display face for headings + big figures — gives the app a
+// bolder, more modern character than Inter alone. Exposed as CSS vars (see globals.css).
+const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], variable: "--font-body" });
+const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: "Assign — Zero-Based Budget",
@@ -15,7 +18,7 @@ export const metadata: Metadata = {
 // in the (app) route group's layout, so public pages (e.g. /login) render clean and full-screen.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.className}>
+    <html lang="en" className={`${inter.variable} ${display.variable}`}>
       <body>
         <ToastProvider>
           <ModalProvider>{children}</ModalProvider>

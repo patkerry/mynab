@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Sparkles, Plus, Check, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Plus, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil, GripVertical } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
@@ -102,6 +102,9 @@ export function BudgetView({
     zero: { label: "All Money Assigned", sub: "Every dollar has a job" },
   }[rtaState];
   const bannerColor = rtaState === "pos" ? "var(--pos)" : rtaState === "neg" ? "var(--neg)" : "var(--accent)";
+  // Bright-on-dark state colors for the bold hero banner.
+  const bannerBright = rtaState === "pos" ? "#4ade80" : rtaState === "neg" ? "#fb7185" : "#a5b4fc";
+  const heroNum = rtaState === "neg" ? "#fb7185" : "#ffffff";
 
   // Payment categories live in a hidden CategoryGroup (excluded from `groups`) so they don't
   // get a manageable, renameable group header — but they still need a place for users to
@@ -153,27 +156,23 @@ export function BudgetView({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "18px 24px",
-            borderColor: bannerColor,
-            background: rtaState === "pos" ? "var(--posSoft)" : rtaState === "neg" ? "var(--negSoft)" : "var(--accentSoft)",
+            flexWrap: "wrap",
+            gap: 16,
+            padding: "28px 32px",
+            border: "none",
+            background: "linear-gradient(120deg, #171b26 0%, #1f2740 100%)",
+            boxShadow: "0 10px 30px rgba(16,24,40,0.18)",
           }}
         >
           <div>
-            <div className="eyebrow" style={{ color: bannerColor }}>
+            <div className="eyebrow" style={{ color: bannerBright, letterSpacing: "0.1em" }}>
               {banner.label}
-              <span style={{ color: "var(--ink3)", fontWeight: 600 }}> · all months</span>
+              <span style={{ color: "rgba(255,255,255,0.4)" }}> · all months</span>
             </div>
-            <div style={{ fontSize: 13, color: "var(--ink2)", marginTop: 2 }}>{banner.sub}</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{banner.sub}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {rtaState === "zero" && (
-              <div style={{ width: 34, height: 34, borderRadius: 999, background: "var(--accent)", display: "grid", placeItems: "center" }}>
-                <Check size={20} color="#fff" strokeWidth={3} />
-              </div>
-            )}
-            <div className="num" style={{ fontSize: 40, fontWeight: 800, color: bannerColor, letterSpacing: "-0.03em", lineHeight: 1 }}>
-              {fmt(rta)}
-            </div>
+          <div className="num" style={{ fontSize: 58, fontWeight: 700, color: heroNum, letterSpacing: "-0.03em", lineHeight: 1 }}>
+            {fmt(rta)}
           </div>
         </div>
       </div>
