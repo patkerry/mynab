@@ -1,18 +1,20 @@
 :root {
-  --ink: #161a21;
-  --ink2: #616b78;
-  --ink3: #95a0ad;
-  --paper: #f4f5f3;
+  /* Royal-blue "classic" theme: blue accent on cool-gray neutrals. Money semantics (pos/neg/warn)
+     unchanged. Palette is centralized here — everything else reads these tokens. */
+  --ink: #151a23;
+  --ink2: #5c6675;
+  --ink3: #909aa8;
+  --paper: #f4f6fb;
   --surface: #ffffff;
-  --line: #e5e8e4;
+  --line: #e4e8f0;
   --pos: #1c9c64;
   --posSoft: #e3f2ea;
   --posInk: #0e6b42;
   --neg: #cb4e33;
   --negSoft: #fae7e1;
   --negInk: #8f3521;
-  --accent: #4a45c4;
-  --accentSoft: #ecebfa;
+  --accent: #2563eb;
+  --accentSoft: #e7eefc;
   --warn: #b9821b;
   --warnSoft: #fbf0d8;
 }
