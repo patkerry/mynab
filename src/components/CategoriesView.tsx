@@ -98,7 +98,7 @@ export function CategoriesView({ groups, categories }: { groups: CategoryGroup[]
                       e.preventDefault();
                       onCatDrop(c.id, catIds);
                     }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--line)", opacity: c.isHidden ? 0.55 : 1 }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px 10px 30px", borderLeft: "2px solid var(--line)", marginLeft: 18, borderBottom: "1px solid var(--line)", opacity: c.isHidden ? 0.55 : 1 }}
                   >
                     <span title="Drag to reorder" style={{ cursor: "grab", ...iconBtn }}>
                       <GripVertical size={13} />
