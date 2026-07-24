@@ -44,6 +44,11 @@ export function CatRow({
       ? `${fmt(assigned)} of ${fmt(c.goalAmountCents)}/mo`
       : `${fmt(avail)} of ${fmt(c.goalAmountCents)} target`
     : null;
+  // Overspending overrides goal state on the bar: a funded goal (green) next to a negative
+  // Available reads as a contradiction — if the category needs money moved into it, the bar
+  // must say so. Green = funded and not overspent, amber = underfunded, rust = overspent.
+  const goalBarColor = avail < 0 ? "var(--neg)" : goalInfo?.met ? "var(--pos)" : "var(--warn)";
+  const goalTextColor = avail < 0 ? "var(--negInk)" : goalInfo?.met ? "var(--posInk)" : "var(--warn)";
 
   const availColor =
     avail < 0
@@ -136,10 +141,11 @@ export function CatRow({
         {goalInfo && (
           <div className={styles.goalRow}>
             <div className={styles.goalTrack}>
-              <div className={styles.goalFill} style={{ width: goalInfo.pct + "%", background: goalInfo.met ? "var(--pos)" : "var(--warn)" }} />
+              <div className={styles.goalFill} style={{ width: goalInfo.pct + "%", background: goalBarColor }} />
             </div>
-            <span className={styles.goalLabel} style={{ color: goalInfo.met ? "var(--posInk)" : "var(--warn)" }}>
+            <span className={styles.goalLabel} style={{ color: goalTextColor }}>
               {goalLabel}
+              {avail < 0 && " — overspent"}
             </span>
           </div>
         )}
