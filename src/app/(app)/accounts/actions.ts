@@ -344,25 +344,20 @@ export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
   return { ok: true };
 }
 
-// Reconciliation is only permitted once every transaction on the account is cleared and
-// approved — no auto-clearing on our side, and no partial reconciliation. The user has to
-// manually clear (or delete) everything uncleared, and review every pending (file-imported)
-// row, first; shared by getReconcileInfo (the pre-check that gates opening the modal) and
-// reconcileAccount (which re-checks server-side rather than trusting that nothing changed
-// between opening the modal and saving it).
+// Adjusting the balance is only allowed once every imported row on the account has been reviewed:
+// an unapproved import isn't counted in the balance yet, so checking against the bank before
+// approving it would produce a bogus "off by X" and a wrong adjustment. (Everything is auto-cleared
+// now, so there's no separate clear gate.) Shared by getReconcileInfo (gates opening the dialog) and
+// reconcileAccount (re-checks server-side at submit, in case a row changed in between).
 async function reconcileEligibility(budgetId: string, accountId: string) {
   const transactions = await prisma.transaction.findMany({ where: { budgetId, accountId, deletedAt: null } });
-  const unclearedCount = transactions.filter((t) => !t.cleared).length;
   const pendingCount = transactions.filter((t) => t.pending).length;
-  return { transactions, unclearedCount, pendingCount };
+  return { transactions, pendingCount };
 }
 
-function blockingReason(unclearedCount: number, pendingCount: number): string | null {
+function blockingReason(pendingCount: number): string | null {
   if (pendingCount > 0) {
-    return `Approve every imported transaction before reconciling — ${pendingCount} pending.`;
-  }
-  if (unclearedCount > 0) {
-    return `Clear every transaction before reconciling — ${unclearedCount} transaction${unclearedCount > 1 ? "s are" : " is"} still uncleared.`;
+    return `Approve the ${pendingCount} pending transaction${pendingCount > 1 ? "s" : ""} first — an unreviewed import would throw off the balance.`;
   }
   return null;
 }
@@ -373,26 +368,25 @@ export async function getReconcileInfo(accountId: string): Promise<ReconcileChec
   const { budgetId } = await requireBudget("read");
   const account = await prisma.account.findFirst({ where: { id: accountId, budgetId }, select: { id: true } });
   if (!account) return { ok: false, reason: "Account not found." };
-  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(budgetId, accountId);
-  const reason = blockingReason(unclearedCount, pendingCount);
+  const { transactions, pendingCount } = await reconcileEligibility(budgetId, accountId);
+  const reason = blockingReason(pendingCount);
   if (reason) return { ok: false, reason };
   return { ok: true, currentBalanceCents: transactions.reduce((s, t) => s + t.amountCents, 0) };
 }
 
 export type ReconcileResult = { ok: true; adjustmentCents: number } | { ok: false; reason: string };
 
-// Never auto-clears anything and never partially reconciles — if the account isn't fully
-// cleared this just refuses and explains why. Once eligible, creates a Reconciliation record
-// EVERY time (this is the audit trail — a clean reconciliation with no discrepancy used to
-// leave zero trace anywhere), plus a single adjustment transaction (already cleared, dated as
-// of "now") only when the statement balance actually differs from the tracked one.
+// Snap the account to a real bank balance. Refuses if any imported row is still unreviewed (see
+// reconcileEligibility). Records a Reconciliation EVERY time (the audit trail — even a clean check
+// with no discrepancy is logged), plus a single visible adjustment transaction (dated "now") only
+// when the entered balance actually differs from what the app has.
 export async function reconcileAccount(accountId: string, actualBalance: string): Promise<ReconcileResult> {
   const { budgetId } = await requireBudget("write");
   const account = await prisma.account.findFirst({ where: { id: accountId, budgetId } });
   if (!account) return { ok: false, reason: "Account not found." };
 
-  const { transactions, unclearedCount, pendingCount } = await reconcileEligibility(budgetId, accountId);
-  const reason = blockingReason(unclearedCount, pendingCount);
+  const { transactions, pendingCount } = await reconcileEligibility(budgetId, accountId);
+  const reason = blockingReason(pendingCount);
   if (reason) return { ok: false, reason };
 
   const currentBalanceCents = transactions.reduce((s, t) => s + t.amountCents, 0);

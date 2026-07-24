@@ -30,37 +30,41 @@ export function ReconcileModal({
     const result = await reconcileAccount(accountId, actual);
     setSaving(false);
     if (!result.ok) {
-      // Re-checked server-side in case something changed (a transaction added/uncleared in
-      // another tab) between opening this modal and hitting Reconcile — still refuses rather
-      // than partially reconciling.
+      // Re-checked server-side in case something changed (e.g. a pending row) between opening this
+      // dialog and submitting — refuses rather than adjusting against a half-reviewed account.
       showToast(result.reason);
       return;
     }
-    showToast(result.adjustmentCents === 0 ? "Reconciled — no adjustment needed." : `Reconciled — added a ${fmt(result.adjustmentCents)} adjustment.`);
+    showToast(
+      result.adjustmentCents === 0
+        ? "Balance already matches — nothing to adjust."
+        : `Added a ${fmt(result.adjustmentCents)} adjustment so this account matches your bank.`,
+      "success"
+    );
     close();
   };
 
   return (
     <>
       <div className={m.head}>
-        <h3 className={m.title}>Reconcile · {accountName}</h3>
+        <h3 className={m.title}>Adjust balance · {accountName}</h3>
         <button onClick={close} className={m.close}>
           <X size={19} />
         </button>
       </div>
       <div className={m.body}>
         <div className="field">
-          <label>Tracked balance</label>
+          <label>Balance in the app</label>
           <div className={`num ${styles.balanceValue}`}>{fmt(currentBalanceCents)}</div>
         </div>
         <div className="field">
-          <label>Actual statement balance</label>
+          <label>Your actual bank balance</label>
           <input value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
         <p className="hint">
           {diffCents === 0
-            ? "Matches — reconciling will just confirm the account, no adjustment needed."
-            : `A ${fmt(Math.abs(diffCents))} adjustment transaction will be added to cover the difference.`}
+            ? "These match — nothing to adjust."
+            : `Off by ${fmt(Math.abs(diffCents))}. We'll add an adjustment transaction so the app matches your bank.`}
         </p>
       </div>
       <div className={m.footer}>
@@ -68,7 +72,7 @@ export function ReconcileModal({
           Cancel
         </button>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? "Reconciling…" : "Reconcile"}
+          {saving ? "Adjusting…" : "Adjust balance"}
         </button>
       </div>
     </>

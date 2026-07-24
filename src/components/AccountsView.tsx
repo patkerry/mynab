@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, CheckCheck, Trash2, ScrollText, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, CheckCheck, Trash2, Scale, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
 import { deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
@@ -187,7 +187,7 @@ export function AccountsView({
             </span>
             {pendingCount > 0 && <span className={styles.pendingNote}>{pendingCount} pending — needs approval</span>}
             {accountFilter !== "all" && (
-              <span className={styles.muted3}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
+              <span className={styles.muted3}>{lastReconciliation ? `Balance last checked ${dateLabel(lastReconciliation.date)}` : "Balance not checked yet"}</span>
             )}
           </div>
         </div>
@@ -198,8 +198,8 @@ export function AccountsView({
             </button>
           )}
           {accountFilter !== "all" && (
-            <button className="btn btn-ghost" onClick={handleReconcile}>
-              <ScrollText size={15} /> Reconcile
+            <button className="btn btn-ghost" onClick={handleReconcile} title="Check this account against your bank balance and add an adjustment if it's off">
+              <Scale size={15} /> Adjust balance
             </button>
           )}
           {lastImportBatch && (
