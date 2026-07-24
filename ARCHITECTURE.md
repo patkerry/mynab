@@ -4,6 +4,13 @@ A YNAB-style zero-based budgeting app. Next.js (App Router) + TypeScript + Postg
 This file exists because a very long build session uncovered a lot of non-obvious behavior and a
 few expensive lessons — read it before making changes, especially to `src/lib/budget.ts`.
 
+## Status: 1.0
+
+Tagged `v1.0.0` — the first release. The web app (Next.js + Postgres, Google OAuth) is the primary,
+fully-supported target: budgeting engine, transactions register with import/reconcile, categories,
+reports, multi-user with per-user isolated budgets, and an admin surface. The desktop (Electron +
+SQLite) build works but is a secondary target — see the note in the dual-schema section below.
+
 ## Stack specifics
 
 - **Prisma 7** uses the new `prisma-client` generator (not `prisma-client-js`), output to
@@ -24,6 +31,16 @@ few expensive lessons — read it before making changes, especially to `src/lib/
   so any modal reflects on close. Actions that navigate (`router.push`) already refresh as a side effect.
 
 ## The dual-schema split (Postgres web + SQLite desktop)
+
+> **⚠️ Electron/desktop is viable but an afterthought.** The whole app was built web-first; the
+> desktop target was bolted on afterward and gets far less exercise. It genuinely works — the
+> dual-schema split, the runtime client cast in `src/lib/db.ts`, and the `electron:*` build scripts
+> are all real and functional — but treat it as second-class: the parity check is only a *text*
+> check (see below), migrations against a live desktop SQLite DB are a known soft spot
+> (`electron/main.js` migrates only on a fresh DB), and web-only concerns (Google OAuth, multi-user,
+> admin) simply don't exist on desktop, so those code paths are gated on `DB_PROVIDER`/`showAuth`
+> rather than shared. If you touch schema or data-layer code, verify the desktop build explicitly —
+> don't assume web-green means desktop-green.
 
 There are **two** Prisma schemas that must define identical models:
 - `prisma/schema.postgres.prisma` → generates `src/generated/prisma-postgres` (web/server build).
@@ -143,6 +160,24 @@ then any uncleared row. `toggleCleared` separately blocks uncleared→cleared fo
 `NORMAL` transaction or a still-`pending` one. A `Reconciliation` row is written every time,
 including a clean reconciliation with no adjustment.
 
+## Sidebar & register chrome (`Sidebar.tsx`, `AccountsView.tsx`)
+
+- **Ready-to-Assign is computed in `getSidebarData` (`src/lib/queries.ts`), NOT via
+  `computeDerived`.** RTA is `totalIncome − totalAssigned`, and both are all-time aggregates (not
+  month-scoped — see the engine section), so the sidebar can show it without knowing the selected
+  month or paying for a full `computeDerived`. If you ever make RTA month-scoped in the engine, this
+  sidebar copy must change too — they are two implementations of the same formula.
+- **Signed-in user's name** comes straight off the Auth.js session (`session.user.name`, Google's
+  display name; falls back to email). Rendered at the top of the sidebar under the brand, web-only
+  (gated on `showAuth`, same as Sign out) — desktop has no session.
+- **"Uncleared" figure in the register header** = `unclearedCents + pendingCents`, a **signed net**
+  (YNAB-style: clearing/approving an expense makes it rise toward $0). The two sums are disjoint by
+  construction — imported rows land `cleared: true, pending: true` (`src/lib/import.ts`), so a
+  pending row is never in the `cleared: false` set — so the sum never double-counts. `pendingCents`
+  is a dedicated aggregate in `getAccountTransactions` alongside `pendingCount`. (There is no
+  cleared/uncleared *toggle* — that was deliberately dropped; the register uses one clean state axis,
+  tan = needs review / white = done.)
+
 ## One-off scripts (repo root, not part of the app)
 
 These exist for data migration/generation/validation, not the running app itself:
@@ -153,11 +188,12 @@ These exist for data migration/generation/validation, not the running app itself
   recreating them, so ids (and any open browser tabs/bookmarks) stay valid. Prefer this one.
 - `validate-ynab.ts` / `investigate-mismatch.ts` — compare `computeDerived()` output against
   YNAB's own historical Plan.csv Activity/Available figures, for auditing import fidelity.
-- `generate-synthetic-year.ts` — wipes the DB and generates a clean, fully-controlled 12-month
-  synthetic budget (3 accounts, ~13 categories, realistic recurring transactions, a credit card
-  paid off in full every month) specifically so the engine's math can be verified exactly rather
-  than forensically reconstructed from messy real history. **As of this writing, this is what's
-  in the dev database** — not real financial data.
+- `scripts/reset-demo.ts` — wipes and reseeds **every** budget in the DB with the standard demo
+  dataset (the same per-budget reset the in-app "Reset demo data" button runs, via
+  `resetDatabase`/`buildSeedData` in `prisma/seedData.ts`). Run:
+  `npx tsx --env-file=.env scripts/reset-demo.ts`. **This is what's in the dev database** — clean
+  demo data (3 accounts, ~11 categories, current-month transactions), not real financial data.
+  (Supersedes the old `generate-synthetic-year.ts`, which no longer exists.)
 
 ## Testing notes
 
