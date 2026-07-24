@@ -11,6 +11,38 @@
   padding: 10px 16px;
   align-items: center;
 }
+/* Category cell = the select plus the always-visible split toggle beside it. */
+.catCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.catCell select {
+  flex: 1;
+  min-width: 0;
+}
+.splitToggle {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--ink2);
+  display: grid;
+  place-items: center;
+}
+.splitToggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.splitToggleActive,
+.splitToggleActive:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 .splitBlock {
   display: flex;
   flex-direction: column;

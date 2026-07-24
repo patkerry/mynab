@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, Split as SplitIcon, X } from "lucide-react";
 import { TXN_GRID, fmt, parseMoney } from "@/lib/format";
 import { validateSplitDraft, type SplitLineDraft } from "@/lib/splits";
 import { useToast } from "./toast/ToastContext";
@@ -128,27 +128,39 @@ export function TxnEditorRow({
           className={styles.input}
           style={{ opacity: isTransfer ? 0.5 : 1 }}
         />
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={styles.input}>
-          <option value="income">Inflow: Ready to Assign</option>
-          <option value="">Uncategorized</option>
-          <option value="split">Split across categories…</option>
-          <optgroup label="Category">
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </optgroup>
-          {allowTransfer && (
-            <optgroup label="Transfer to">
-              {accounts.map((a) => (
-                <option key={a.id} value={"transfer:" + a.id}>
-                  {a.name}
+        <div className={styles.catCell}>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={styles.input}>
+            <option value="income">Inflow: Ready to Assign</option>
+            <option value="">Uncategorized</option>
+            <option value="split">Split across categories…</option>
+            <optgroup label="Category">
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
                 </option>
               ))}
             </optgroup>
-          )}
-        </select>
+            {allowTransfer && (
+              <optgroup label="Transfer to">
+                {accounts.map((a) => (
+                  <option key={a.id} value={"transfer:" + a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {/* The obvious affordance — same state as the dropdown's "Split…" option, just visible.
+              Toggling off returns to Uncategorized so the user re-picks a single category. */}
+          <button
+            type="button"
+            onClick={() => setCategoryId(isSplit ? "" : "split")}
+            title={isSplit ? "Un-split — back to a single category" : "Split across categories"}
+            className={isSplit ? `${styles.splitToggle} ${styles.splitToggleActive}` : styles.splitToggle}
+          >
+            <SplitIcon size={14} strokeWidth={2.4} />
+          </button>
+        </div>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Memo" className={styles.input} />
         <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={styles.input}>
           {accounts.map((a) => (
