@@ -21,6 +21,7 @@ export function AccountsView({
   clearedCents,
   unclearedCents,
   pendingCount,
+  pendingCents,
   accounts,
   categories,
   accountFilter,
@@ -35,6 +36,7 @@ export function AccountsView({
   clearedCents: number;
   unclearedCents: number;
   pendingCount: number;
+  pendingCents: number;
   accounts: Account[];
   categories: Category[];
   accountFilter: string;
@@ -185,6 +187,9 @@ export function AccountsView({
           <div className={styles.stats}>
             <span className={styles.statLabel}>
               Balance <b className="num" style={{ color: clearedCents + unclearedCents < 0 ? "var(--neg)" : "var(--ink)" }}>{fmt(clearedCents + unclearedCents)}</b>
+            </span>
+            <span className={styles.statLabel} title="Uncleared transactions plus imported rows not yet approved">
+              Uncleared <b className={`num ${styles.statVal}`}>{fmt(unclearedCents + pendingCents)}</b>
             </span>
             {pendingCount > 0 && <span className={styles.pendingNote}>{pendingCount} pending — needs approval</span>}
             {accountFilter !== "all" && (

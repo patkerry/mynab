@@ -17,6 +17,7 @@ export default async function AccountsPage({
     clearedCents,
     unclearedCents,
     pendingCount,
+    pendingCents,
     accounts,
     categories,
     lastReconciliation,
@@ -32,6 +33,7 @@ export default async function AccountsPage({
       clearedCents={clearedCents}
       unclearedCents={unclearedCents}
       pendingCount={pendingCount}
+      pendingCents={pendingCents}
       accounts={accounts}
       categories={categories}
       accountFilter={accountFilter}

@@ -13,6 +13,7 @@ export function Sidebar({
   accounts,
   acctBalance,
   netWorth,
+  readyToAssign,
   isAdmin = false,
   showAuth = false,
   showDemoReset = false,
@@ -20,6 +21,7 @@ export function Sidebar({
   accounts: Account[];
   acctBalance: Record<string, number>;
   netWorth: number;
+  readyToAssign: number;
   isAdmin?: boolean;
   showAuth?: boolean;
   showDemoReset?: boolean;
@@ -35,6 +37,11 @@ export function Sidebar({
   const currentAccount = searchParams.get("account") || "all";
   const currentCategory = searchParams.get("category") || "all";
 
+  // Ready-to-Assign summary, mirroring BudgetView's banner states.
+  const rtaState = readyToAssign > 0 ? "pos" : readyToAssign < 0 ? "neg" : "zero";
+  const rtaLabel = rtaState === "pos" ? "Ready to Assign" : rtaState === "neg" ? "Over-Assigned" : "All Money Assigned";
+  const rtaColor = rtaState === "pos" ? "var(--pos)" : rtaState === "neg" ? "var(--neg)" : "var(--accentDeep)";
+
   return (
     <aside className={`sidebar ${styles.aside}`}>
       <div className={styles.brand}>
@@ -46,6 +53,13 @@ export function Sidebar({
           <div className={styles.subtitle}>ZERO-BASED BUDGET</div>
         </div>
       </div>
+
+      <Link href="/budget" className={styles.rta} style={{ borderColor: rtaColor }}>
+        <span className="eyebrow" style={{ color: rtaColor }}>{rtaLabel}</span>
+        <span className={`num ${styles.rtaNum}`} style={{ color: rtaState === "neg" ? "var(--neg)" : "var(--ink)" }}>
+          {fmt(readyToAssign)}
+        </span>
+      </Link>
 
       <nav className={styles.nav}>
         <Link href="/budget" className={`navlink ${pathname === "/budget" ? "active" : ""}`}>

@@ -7,7 +7,7 @@ import styles from "./layout.module.css";
 // shell around the page. Public pages like /login live outside this group and get only the root
 // layout, so they render as a clean full-screen page with no sidebar.
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { accounts, acctBalance, netWorth } = await getSidebarData();
+  const { accounts, acctBalance, netWorth, readyToAssign } = await getSidebarData();
 
   // Auth-aware nav is web-only. On the desktop (SQLite) build there's no session/admin, and calling
   // Auth.js there would need AUTH_SECRET — so resolve it only on web, via dynamic import.
@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="ynab-root">
       <Suspense fallback={null}>
-        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
+        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} readyToAssign={readyToAssign} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
       </Suspense>
       <main className={styles.main}>{children}</main>
     </div>

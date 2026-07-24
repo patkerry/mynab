@@ -12,11 +12,12 @@ import type { AccountFilter, CategoryFilter } from "./types";
 // than throwing (which would break the web build and the login page).
 export async function getSidebarData() {
   const active = await getActiveBudgetOptional();
-  if (!active) return { accounts: [], acctBalance: {} as Record<string, number>, netWorth: 0 };
+  if (!active) return { accounts: [], acctBalance: {} as Record<string, number>, netWorth: 0, readyToAssign: 0 };
   const budgetId = active.budgetId;
-  const [accounts, transactions] = await Promise.all([
+  const [accounts, transactions, budgetEntries] = await Promise.all([
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
-    prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true } }),
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true, kind: true, pending: true } }),
+    prisma.budgetEntry.findMany({ where: { budgetId }, select: { amountCents: true } }),
   ]);
   const acctBalance: Record<string, number> = {};
   accounts.forEach((a) => (acctBalance[a.id] = 0));
@@ -24,7 +25,18 @@ export async function getSidebarData() {
     acctBalance[t.accountId] = (acctBalance[t.accountId] || 0) + t.amountCents;
   });
   const netWorth = Object.values(acctBalance).reduce((a, b) => a + b, 0);
-  return { accounts, acctBalance, netWorth };
+
+  // Ready-to-Assign mirrors computeDerived: totalIncome - totalAssigned, both all-time aggregates
+  // (not month-scoped), so it needs no month here. Income excludes pending (unapproved) rows and
+  // off-budget/tracking accounts, matching budget.ts exactly.
+  const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
+  const totalIncome = transactions
+    .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
+    .reduce((s, t) => s + t.amountCents, 0);
+  const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
+  const readyToAssign = totalIncome - totalAssigned;
+
+  return { accounts, acctBalance, netWorth, readyToAssign };
 }
 
 // Returns raw rows rather than a computed `derived` object: BudgetView must be a Client
@@ -83,7 +95,7 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   const pageSize = ACCOUNT_TXNS_PAGE_SIZE;
   const skip = (filters.page - 1) * pageSize;
 
-  const [transactions, totalCount, clearedAgg, unclearedAgg, pendingCount, accounts, categories, lastReconciliation] = await Promise.all([
+  const [transactions, totalCount, clearedAgg, unclearedAgg, pendingCount, pendingAgg, accounts, categories, lastReconciliation] = await Promise.all([
     // Order needs a TOTALLY deterministic tiebreaker. date alone ties constantly; even
     // date+createdAt ties for imported rows (a whole file's rows share one createMany timestamp),
     // and Postgres then returns tied rows in arbitrary heap order — which shifts after any update,
@@ -97,6 +109,10 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     prisma.transaction.aggregate({ where: { ...where, cleared: true }, _sum: { amountCents: true } }),
     prisma.transaction.aggregate({ where: { ...where, cleared: false }, _sum: { amountCents: true } }),
     prisma.transaction.count({ where: { ...where, pending: true } }),
+    // Dollar total of unapproved (imported, pending) rows. Disjoint from unclearedCents: imported
+    // rows land cleared:true (see import.ts), so pending rows never fall in the cleared:false set —
+    // the header can sum the two without double-counting.
+    prisma.transaction.aggregate({ where: { ...where, pending: true }, _sum: { amountCents: true } }),
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which
     // needs them for computeDerived): they're never a valid categoryId for a transaction
@@ -116,6 +132,7 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     clearedCents: clearedAgg._sum.amountCents ?? 0,
     unclearedCents: unclearedAgg._sum.amountCents ?? 0,
     pendingCount,
+    pendingCents: pendingAgg._sum.amountCents ?? 0,
     accounts,
     categories,
     lastReconciliation,
