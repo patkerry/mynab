@@ -10,6 +10,6 @@ The guide's structure, for orientation:
 - **Part 1 — The philosophy of zero-based budgeting**, framed as the four misconceptions people
   bring in (budget-as-forecast, budget-as-limit, savings-as-leftovers, balance-as-spendable) and
   why the goal state is "Ready to Assign: $0.00".
-- **Part 2 — Using the app**: getting started, the sidebar, the Budget page, the transaction
-  register's review model, bank imports, credit-card payment categories, "Adjust balance",
-  Reports, and a "when the numbers look wrong" troubleshooting list.
+- **Part 2 — "How do I…?"**: a searchable, wiki-style list of ~19 task-shaped entries (record a
+  paycheck, split a purchase, pay the credit card, fix wrong-looking numbers, …). Entries live in
+  `src/app/(app)/help/recipes.tsx` — add new ones there (question + search keywords + steps).

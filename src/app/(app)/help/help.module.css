@@ -70,3 +70,53 @@
   color: var(--accentDeep);
   white-space: nowrap;
 }
+/* The "How do I…?" search + entry list */
+.searchBox {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  font-size: 14px;
+  margin: 4px 0 14px;
+}
+.searchBox:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.noMatch {
+  color: var(--ink3);
+  font-style: italic;
+}
+.recipeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0;
+}
+.recipeQ {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  list-style-position: inside;
+}
+.recipeQ:hover {
+  color: var(--accentDeep);
+}
+.recipe[open] .recipeQ {
+  border-bottom: 1px solid var(--line);
+}
+.recipeSteps {
+  margin: 10px 0 12px;
+  padding-left: 34px;
+}
+.recipeSteps li {
+  margin-bottom: 7px;
+  padding-right: 14px;
+}
