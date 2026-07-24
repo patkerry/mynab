@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Tags, Plus, RotateCcw, CircleDot, Shield, LogOut } from "lucide-react";
+import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Tags, Plus, RotateCcw, CircleDot, CircleHelp, Shield, LogOut } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { signOutAction } from "@/app/auth-actions";
@@ -81,6 +81,9 @@ export function Sidebar({
         </Link>
         <Link href="/reports" className={`navlink ${pathname === "/reports" ? "active" : ""}`}>
           <PieChart size={17} /> Reports
+        </Link>
+        <Link href="/help" className={`navlink ${pathname === "/help" ? "active" : ""}`}>
+          <CircleHelp size={17} /> Guide
         </Link>
         {isAdmin && (
           <Link href="/admin" className={`navlink ${pathname === "/admin" ? "active" : ""}`}>

@@ -1,0 +1,72 @@
+.page {
+  padding: 18px 26px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.h2 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+}
+.desc {
+  font-size: 13px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+/* Readable prose column — everything below the header lives inside this. */
+.prose {
+  max-width: 68ch;
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+.prose p {
+  margin: 0 0 12px;
+}
+.prose strong {
+  font-weight: 700;
+}
+.prose ul,
+.prose ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.prose li {
+  margin-bottom: 6px;
+}
+/* Part titles ("The philosophy" / "Using the app") */
+.part {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 26px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+/* Section headings within a part */
+.section {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 22px 0 8px;
+}
+/* The one-sentence thesis, set off like the RTA banner */
+.thesis {
+  background: var(--accentSoft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accentDeep);
+  margin: 4px 0 14px;
+}
+/* Inline reference to a UI label ("Adjust balance", "Approve selected") */
+.ui {
+  font-weight: 700;
+  color: var(--accentDeep);
+  white-space: nowrap;
+}
