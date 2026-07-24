@@ -18,7 +18,9 @@ SQLite) build works but is a secondary target — see the note in the dual-schem
   `src/lib/db.ts`. Local dev runs Postgres on `localhost:5432` (macOS); `DATABASE_URL` in `.env`
   points there. (Earlier sessions ran on WSL2 with Postgres on the Windows host reachable via the
   WSL2 gateway IP — if you're in that setup, use the gateway IP, not `localhost`.)
-- **Vitest** for tests (`npm test`): `src/lib/budget.test.ts`, `csv.test.ts`, `qfx.test.ts`.
+- **Vitest** for tests (`npm test`, which also runs the schema-parity check): `src/lib/budget.test.ts`,
+  `csv.test.ts`, `qfx.test.ts`, `merchant.test.ts`, `reports.test.ts`, `auth-allowlist.test.ts`,
+  `register.test.ts`.
 - **⚠️ Dev server + schema changes**: after `prisma migrate dev` / `prisma generate`, **restart the
   dev server**. Turbopack does not reliably pick up a regenerated Prisma client — you'll see
   confusing "Unknown argument" or stale-type errors from a server that's still running on the old
@@ -72,6 +74,10 @@ all-time-unfiltered `{ accounts, categories, transactions, budgetEntries }`.
   ("up to and including this month"), enabling month-to-month rollover.
 - `readyToAssign = totalIncome - totalAssigned` and `netWorth` are **all-time aggregates, not
   scoped to the selected month** — matches the original single-file app's design.
+- **Off-budget (tracking) accounts** (`onBudget: false` — Investment/Loan): balances count toward
+  `netWorth`/`acctBalance`, but their transactions are excluded from category activity, income, and
+  Ready-to-Assign (the `offBudget` set at the top of `computeDerived`). `getSidebarData`'s RTA copy
+  applies the same exclusion — keep them in sync.
 - **Credit card payment categories**: a `Category` with `linkedAccountId` set represents "money
   set aside to pay this card." Its activity is *derived* from the linked card's own transactions
   (`classifyCardTransaction`/`buildActivityByMonth`), not from transactions tagged with its own
@@ -99,8 +105,8 @@ all-time-unfiltered `{ accounts, categories, transactions, budgetEntries }`.
 
 ### The hard-earned lesson: `netWorth === readyToAssign + sum(every category's available)`
 
-This identity holds exactly for clean, fully-categorized data (verified with a controlled
-synthetic dataset — see below). It can drift for messy, reconstructed real-world history (e.g.
+This identity holds exactly for clean, fully-categorized data (verified at the time with a
+controlled synthetic dataset; the invariant is also locked by tests in `budget.test.ts`). It can drift for messy, reconstructed real-world history (e.g.
 transactions that were never categorized, or large one-time events like an account closure
 recorded as "Income" when it was really an internal transfer). **Critically: a `BudgetEntry`
 (assignment) can never fix this drift.** Assigning money to any category shifts value between
@@ -113,15 +119,36 @@ and fixing its `kind`/categorization to match reality. Everything else is just m
 hole to a different, equally-wrong-looking spot. Don't re-litigate this without re-deriving it —
 it took several failed attempts (and a live-corrected data-corruption incident) to nail down.
 
-## Schema (`prisma/schema.prisma`)
+## Schema (`prisma/schema.postgres.prisma` + `schema.sqlite.prisma`)
 
-`Account` (CHECKING/SAVINGS/CREDIT, `onBudget` field exists but **is not read anywhere in the
-engine** — a real gap if on/off-budget tracking accounts (RRSP-style) are ever added back) →
-`CategoryGroup` (`isHidden` for the payment-category group) → `Category` (`isHidden` for
-user-hidden categories, `goalType`/`goalAmountCents`, `linkedAccountId` for payment categories) →
-`BudgetEntry` (unique on `categoryId+yearMonth`) / `Transaction` (`kind`, `pending`, `externalId`,
-`deletedAt`, `transferId`) → `Reconciliation` (one row per reconciliation attempt, clean or not —
-an audit trail).
+**Budget data** (everything is stamped with `budgetId`): `Account` (CHECKING/SAVINGS/CREDIT/
+INVESTMENT/LOAN; `onBudget` **is read by the engine** — Investment/Loan are off-budget tracking
+accounts whose balances count toward net worth but whose transactions are excluded from category
+activity, income, and Ready-to-Assign, see `computeDerived`'s `offBudget` set) → `CategoryGroup`
+(`isHidden` for the payment-category group) → `Category` (`isHidden` for user-hidden categories,
+`goalType`/`goalAmountCents`, `linkedAccountId` for payment categories) → `BudgetEntry` (unique on
+`categoryId+yearMonth`) / `Transaction` (`kind`, `pending`, `externalId`, `deletedAt`,
+`transferId`) → `Reconciliation` (one row per reconciliation attempt, clean or not — an audit trail).
+
+**Multi-user layer** (web only): `User` (`isAdmin`, `suspendedAt`) → `Membership` (role) →
+`Budget`. On first Google sign-in, `ensureUserAndBudget` (`src/lib/user-provisioning.ts`,
+idempotent by email, called from the Auth.js `jwt` callback) creates the User + their first Budget
++ an `OWNER` Membership + a default category set. Every query/action resolves the active budget
+through `src/lib/budget-context.ts` — desktop resolves to the single local budget
+(`LOCAL_BUDGET_ID`), web validates an `activeBudgetId` cookie against the user's memberships
+(`budget-context.web.ts`) and **enforces suspension in the data layer on every request** (not just
+at sign-in, so a suspended user's live session dies immediately). `requireBudget(permission)` gates
+mutations (`read`/`write`/`manage`). Admin (suspend/reactivate/delete users) lives at `/admin`,
+gated by `requireAdmin` (`src/lib/admin.ts`) which re-checks the DB, not just the JWT hint.
+
+**Known half-built pieces (deliberate, tracked):**
+- **Budget switching**: the `activeBudgetId` cookie is read and membership-validated, but nothing
+  in the UI ever *sets* it — a user with multiple memberships is pinned to their oldest one. The
+  plumbing exists; the switcher doesn't.
+- **`Invite` model + `MembershipRole`**: schema'd in both Prisma files but referenced nowhere in
+  `src/` — budget sharing was designed, never built. Since provisioning only ever creates `OWNER`
+  memberships, the `requireBudget` permission tiers are effectively vacuous today. Either build
+  invites or remove the dead schema; don't half-use it.
 
 ## Import pipeline
 
@@ -179,22 +206,42 @@ including a clean reconciliation with no adjustment.
   cleared/uncleared *toggle* — that was deliberately dropped; the register uses one clean state axis,
   tan = needs review / white = done.)
 
-## One-off scripts (repo root, not part of the app)
+## Reports (`src/lib/reports.ts`, `ReportsView.tsx`)
 
-These exist for data migration/generation/validation, not the running app itself:
-- `import-ynab.ts` — full YNAB CSV export → DB, **wipes and recreates accounts/categories with
-  brand-new ids** (breaks any open browser tab referencing old ids). Only use for a genuine
-  from-scratch import.
-- `reload-ynab.ts` — same export, but looks up existing accounts/categories by name instead of
-  recreating them, so ids (and any open browser tabs/bookmarks) stay valid. Prefer this one.
-- `validate-ynab.ts` / `investigate-mismatch.ts` — compare `computeDerived()` output against
-  YNAB's own historical Plan.csv Activity/Available figures, for auditing import fidelity.
-- `scripts/reset-demo.ts` — wipes and reseeds **every** budget in the DB with the standard demo
-  dataset (the same per-budget reset the in-app "Reset demo data" button runs, via
+A pure layer over the same all-time, unfiltered rows the engine uses — every function takes a
+`months: string[]` window (from `monthsForRange`: trailing 1/3/6/12 months or YTD via
+`RangePicker`), so the date-range control is just a different window, no new queries. Provides
+`summary` (income/spending/net/savings-rate KPIs), `spendByCategory`, `incomeVsSpending`,
+`netWorthTrend` (cumulative at each month-end), `categorySpendTrend` (top-6 categories + "Other",
+keyed by category id since names can collide), `topMerchants`, and `budgetVsActual`. Gotcha:
+report *series* values are **dollars** (to match the chart formatter) while the KPI `summary`
+returns **cents** — don't mix them up. Chart colors come from `src/lib/viz-palette.ts`. Covered by
+`reports.test.ts`.
+
+## Dev/ops scripts (`scripts/`, not part of the running app)
+
+(The historical YNAB-import/validation scripts — `import-ynab.ts`, `reload-ynab.ts`,
+`validate-ynab.ts`, `investigate-mismatch.ts`, `generate-synthetic-year.ts` — **no longer exist**;
+they served the original data migration and are gone. Docs or memories referencing them are stale.)
+
+- `reset-demo.ts` — wipes and reseeds **every** budget in the DB with the standard demo dataset
+  (the same per-budget reset the in-app "Reset demo data" button runs, via
   `resetDatabase`/`buildSeedData` in `prisma/seedData.ts`). Run:
   `npx tsx --env-file=.env scripts/reset-demo.ts`. **This is what's in the dev database** — clean
   demo data (3 accounts, ~11 categories, current-month transactions), not real financial data.
-  (Supersedes the old `generate-synthetic-year.ts`, which no longer exists.)
+- `dev-postgres.mjs` — local dev Postgres via `embedded-postgres` (real Postgres 18 from a
+  downloaded binary; data in gitignored `.pgdata`) — no system Postgres/Docker/Homebrew needed.
+- `create-db-roles.mjs` — bootstraps the least-privilege `mynab_app`/`mynab_migrator` roles
+  (see DEPLOY.md).
+- `set-admin.ts` — grant/revoke global admin by email (`npm run admin:set`); the only way to make
+  the first admin.
+- `seed-user.ts` — provision a user by email with an owned, demo-seeded budget (for testing
+  multi-user with a second account); idempotent.
+- `check-db.ts` — quick sanity dump of users/budgets/counts.
+- `check-schema-parity.ts` — the dual-schema text check, runs in `npm test`.
+- `build-fat-sqlite.mjs` / `prepare-standalone.mjs` / `desymlink-standalone.mjs` /
+  `sync-standalone-native.mjs` / `electron-after-pack.mjs` — Electron packaging plumbing (see the
+  `electron:*` npm scripts).
 
 ## Testing notes
 

@@ -27,7 +27,9 @@ Electron + SQLite desktop build. **Current release: `v1.0.0`.**
 
 ## Getting started (web / Postgres)
 
-Requires Node.js, npm, and a PostgreSQL database (local `localhost:5432` for dev).
+Requires Node.js 20+ and npm. For the database you don't need system Postgres/Docker/Homebrew —
+`node scripts/dev-postgres.mjs` runs a real embedded Postgres on `localhost:5432` (data in the
+gitignored `.pgdata/`); any other Postgres works too.
 
 1. **Install dependencies**
    ```bash
@@ -80,7 +82,10 @@ Requires Node.js, npm, and a PostgreSQL database (local `localhost:5432` for dev
 | `npm run build` | Generate Prisma clients + production build. |
 | `npm test` | Schema-parity check + Vitest unit tests. |
 | `npm run admin:set <email>` | Grant global admin (`--revoke` to remove). |
+| `node scripts/dev-postgres.mjs` | Run a local embedded Postgres (no system install needed). |
 | `npx tsx --env-file=.env scripts/reset-demo.ts` | Wipe + reseed every budget with demo data. |
+| `npx tsx scripts/seed-user.ts <email>` | Provision a second demo-seeded user (multi-user testing). |
+| `npx tsx --env-file=.env scripts/check-db.ts` | Quick sanity dump of users/budgets. |
 | `npm run electron:*` | Desktop build/pack tasks — see below. |
 
 ## Desktop build (Electron + SQLite)
@@ -103,7 +108,12 @@ and Server Actions are exercised by hand. See the coverage-status note in `ARCHI
 
 ## Deployment
 
-Deployed on **Render** (web service) backed by **Neon** (serverless Postgres), with Google OAuth for
-sign-in and `AUTH_ALLOWED_EMAILS` gating access. Migrations use the `prisma/schema.postgres.prisma`
-schema; `prisma.config.ts` prefers `MIGRATE_DATABASE_URL` when running migrations against a
-direct (non-pooled) connection.
+**See [`DEPLOY.md`](./DEPLOY.md) for the full runbook** — hosting choices (a persistent Node
+service, not serverless: the 10mb import Server Action exceeds serverless body caps), the free
+Render + Neon walkthrough via `render.yaml`, least-privilege DB roles
+(`scripts/create-db-roles.mjs`: `mynab_app` runtime / `mynab_migrator` DDL), Google OAuth setup,
+and the production fail-fast guard that refuses to boot with `DB_PROVIDER=sqlite`.
+
+The reference deployment is **Render** (web service) + **Neon** (serverless Postgres), with Google
+OAuth and `AUTH_ALLOWED_EMAILS` gating access. Run `npx prisma migrate deploy` on every release —
+web migrations are not auto-applied.

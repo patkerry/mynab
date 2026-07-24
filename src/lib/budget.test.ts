@@ -563,3 +563,44 @@ describe("off-budget (tracking) accounts", () => {
     expect(computeDerived(inputs, MONTH).activityIn("c_groc", MONTH)).toBe(-3000);
   });
 });
+
+// The hard-earned lesson from ARCHITECTURE.md, locked as a test: for clean, fully-categorized data
+// netWorth === readyToAssign + sum(every category's available), and no BudgetEntry can change that
+// sum — assignments only shift value between RTA and a category's available.
+describe("the reconciliation identity: netWorth === readyToAssign + Σ available", () => {
+  // Income, cash spending, a card purchase, and a card payment — every NORMAL row categorized.
+  const cleanMonth = (entries: BudgetEntry[] = []) =>
+    baseInputs(
+      [
+        txn({ id: "i1", accountId: "a_check", date: `${MONTH}-01`, kind: "INCOME", amountCents: 500000 }),
+        txn({ id: "s1", accountId: "a_check", date: `${MONTH}-03`, kind: "NORMAL", categoryId: "c_groc", amountCents: -40000 }),
+        txn({ id: "s2", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: "c_dine", amountCents: -15000 }),
+        txn({ id: "p1", accountId: "a_check", date: `${MONTH}-10`, kind: "TRANSFER", amountCents: -15000, transferId: "x1" }),
+        txn({ id: "p2", accountId: "a_card", date: `${MONTH}-10`, kind: "TRANSFER", amountCents: 15000, transferId: "x1" }),
+      ],
+      entries
+    );
+
+  it("holds exactly for clean, fully-categorized data", () => {
+    const inputs = cleanMonth();
+    const d = computeDerived(inputs, MONTH);
+    expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth);
+  });
+
+  it("is invariant under any assignment — a BudgetEntry can never fix identity drift", () => {
+    const inputs = cleanMonth([
+      budgetEntry({ id: "b1", categoryId: "c_groc", yearMonth: MONTH, amountCents: 45000 }),
+      budgetEntry({ id: "b2", categoryId: "c_pay", yearMonth: MONTH, amountCents: 999999 }), // absurd on purpose
+    ]);
+    const d = computeDerived(inputs, MONTH);
+    expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth);
+  });
+
+  it("with an off-budget account, holds against on-budget net worth only", () => {
+    const inputs = cleanMonth();
+    inputs.accounts.push(account({ id: "a_rrsp", name: "RRSP", type: "INVESTMENT", onBudget: false }));
+    inputs.transactions.push(txn({ id: "r1", accountId: "a_rrsp", date: `${MONTH}-02`, kind: "INCOME", amountCents: 2000000 }));
+    const d = computeDerived(inputs, MONTH);
+    expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth - d.acctBalance["a_rrsp"]);
+  });
+});
