@@ -15,8 +15,9 @@ SQLite) build works but is a secondary target — see the note in the dual-schem
 
 - **Prisma 7** uses the new `prisma-client` generator (not `prisma-client-js`), output to
   `src/generated/prisma`, and requires an explicit driver adapter (`@prisma/adapter-pg`) — see
-  `src/lib/db.ts`. Postgres runs on the Windows host; from WSL2 it's reachable via the WSL2
-  gateway IP, not `localhost`.
+  `src/lib/db.ts`. Local dev runs Postgres on `localhost:5432` (macOS); `DATABASE_URL` in `.env`
+  points there. (Earlier sessions ran on WSL2 with Postgres on the Windows host reachable via the
+  WSL2 gateway IP — if you're in that setup, use the gateway IP, not `localhost`.)
 - **Vitest** for tests (`npm test`): `src/lib/budget.test.ts`, `csv.test.ts`, `qfx.test.ts`.
 - **⚠️ Dev server + schema changes**: after `prisma migrate dev` / `prisma generate`, **restart the
   dev server**. Turbopack does not reliably pick up a regenerated Prisma client — you'll see
@@ -197,7 +198,30 @@ These exist for data migration/generation/validation, not the running app itself
 
 ## Testing notes
 
-- Playwright in this WSL2 environment needs manually patched shared libs for headless Chromium
+### Coverage status (as of 1.0)
+
+- **What's tested** (`npm test`, Vitest, all pure-function unit tests): the budgeting engine
+  (`budget.test.ts` — the big one, incl. rollover, payment categories, the netWorth/RTA identity,
+  pending exclusion), CSV + QFX parsing (`csv.test.ts`, `qfx.test.ts`), merchant extraction /
+  category guessing (`merchant.test.ts`), reports (`reports.test.ts`), the sign-in allowlist
+  (`auth-allowlist.test.ts`), and schema parity (`check-schema-parity.ts`).
+- **What's NOT tested — know this before assessing:**
+  - **No DB/integration tests.** Everything in `src/lib/queries.ts` and the Server Actions
+    (`accounts/actions.ts`, etc.) runs live Prisma — there is no test harness that stands up a DB,
+    so those paths are exercised only by hand.
+  - The **1.0 sidebar/register additions ship untested**: Ready-to-Assign in `getSidebarData`, the
+    `pendingCents`/Uncleared header stat, and the user-name display. In particular the "Uncleared =
+    uncleared + pending, over disjoint sets" invariant (documented above) rests on `import.ts`
+    always writing `cleared: true, pending: true`; it is asserted only in prose, not in a test,
+    because the header total is computed from Prisma `_sum` aggregates and can't be unit-tested
+    without a DB harness (a pure reimplementation test would prove nothing about the real query).
+    If you add DB integration tests, lock this invariant first.
+
+### Playwright (environment-specific)
+
+- Current dev is macOS, where Playwright's bundled Chromium works out of the box. The note below is
+  for the older WSL2 setup and does not apply on macOS.
+- Playwright in that WSL2 environment needs manually patched shared libs for headless Chromium
   (`libnspr4`, `libnss3`, `libasound.so.2` missing) — fixed via `apt-get download` +
   `dpkg-deb -x` + `LD_LIBRARY_PATH`. Recreate this if a fresh session's scratchpad doesn't have it.
 - **When testing modals with Playwright**: scope input selectors to `.modal` (e.g.
