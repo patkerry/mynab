@@ -1,6 +1,10 @@
 :root {
   /* "Warm organic / calm money" theme: sage accent on warm sand/clay neutrals — deliberately not
      cold fintech blue. Palette is centralized here; everything reads these tokens. */
+  /* App is light-only for now (see data-theme="light" in src/app/layout.tsx). color-scheme:light
+     makes native controls — date picker, select popups, scrollbars — render light too, so they can't
+     come back dark on a dark-OS machine. */
+  color-scheme: light;
   --ink: #2a2620;
   --ink2: #7c7264;
   --ink3: #a99e8c;
@@ -24,7 +28,10 @@
   --font-display: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", "Segoe UI", system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
 }
-/* Cozy warm-dark (espresso, not cold black). Applies on OS dark preference. */
+/* Cozy warm-dark (espresso, not cold black). CURRENTLY INERT: layout.tsx pins data-theme="light" on
+   <html>, so this `:not([data-theme="light"])` block never matches. Kept (not deleted) so dark mode
+   can be re-enabled later — but only after a full dark-mode contrast audit; it shipped with several
+   hardcoded-light-color holes (inputs, hovers, admin page) which is why the app is light-only now. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ink: #f2ebdd;
