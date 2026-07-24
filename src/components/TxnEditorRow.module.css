@@ -33,9 +33,9 @@
   justify-content: flex-end;
 }
 .iconBtn {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
 }

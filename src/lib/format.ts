@@ -38,5 +38,6 @@ export function curYM() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// shared column template for the register header / rows / editor
-export const TXN_GRID = "128px 1.1fr 120px 1fr 120px 104px 56px";
+// shared column template for the register header / rows / editor. Last column holds the row actions
+// (approve / cleared toggle + delete) — wide enough for a labeled "Approve" button on pending rows.
+export const TXN_GRID = "128px 1.1fr 120px 1fr 120px 104px 128px";

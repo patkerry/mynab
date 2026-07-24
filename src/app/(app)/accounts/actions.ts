@@ -180,9 +180,11 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
   return true;
 }
 
-// Ports updateTxn (ynab-clone.jsx lines 598-611). Editing a transaction into/out of a
-// transfer isn't supported, matching the original (TxnEditorRow disables allowTransfer
-// when editing — ynab-clone.jsx line 672).
+// Editing a normal/pending row INTO a transfer IS supported (see the transfer branch below — it
+// converts the row to a source leg and creates the linked counterpart in the destination account).
+// The reverse — editing an EXISTING transfer — is still unsupported: transfer rows are delete-only
+// and never open in the editor (the row onClick guard in AccountsView skips them), so this only ever
+// handles normal/income/pending rows as input.
 export async function updateTransaction(id: string, draft: TxnDraft): Promise<boolean> {
   const { budgetId } = await requireBudget("write");
   const cents = parseMoney(draft.amount);
@@ -196,7 +198,53 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   ]);
   if (!owned || !acct) return false;
 
-  if (draft.categoryId === "income") {
+  if (draft.categoryId.startsWith("transfer:")) {
+    // Convert this (normal/pending) row into a linked transfer: the edited row becomes the source
+    // leg and a matching counterpart leg is created in the destination account — the same two-leg
+    // shape addTransaction produces. One-way only: existing transfers are delete-only (never opened
+    // in the editor — see the row onClick guard in AccountsView), so there's no prior counterpart to
+    // reconcile here. Sign rules mirror addTransaction: positive amount, source = -cents (outflow),
+    // counterpart = +cents (e.g. a "transfer to credit card" lands as a payment on the card).
+    if (cents <= 0) return false;
+    const toId = draft.categoryId.slice(9);
+    if (!toId || toId === draft.accountId) return false;
+    const toAcct = await prisma.account.findFirst({ where: { id: toId, budgetId }, select: { id: true } });
+    if (!toAcct) return false;
+    const transferId = uid("xfer");
+    await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id },
+        data: {
+          date: draft.date,
+          accountId: draft.accountId,
+          payee: "",
+          kind: "TRANSFER",
+          categoryId: null,
+          amountCents: -cents,
+          memo,
+          pending: false,
+          transferId,
+          counterpartAccountId: toId,
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          budgetId,
+          accountId: toId,
+          date: draft.date,
+          payee: "",
+          kind: "TRANSFER",
+          categoryId: null,
+          amountCents: cents,
+          cleared: false,
+          memo,
+          pending: false,
+          transferId,
+          counterpartAccountId: draft.accountId,
+        },
+      }),
+    ]);
+  } else if (draft.categoryId === "income") {
     await prisma.transaction.update({
       where: { id },
       data: {

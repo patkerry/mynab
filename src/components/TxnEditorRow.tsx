@@ -134,10 +134,10 @@ export function TxnEditorRow({
       />
       <div className={styles.actions}>
         <button onClick={submit} title="Save (Enter)" className={`${styles.iconBtn} ${styles.save}`}>
-          <Check size={14} strokeWidth={3} />
+          <Check size={17} strokeWidth={3} />
         </button>
         <button onClick={onClose} title="Cancel (Esc)" className={`${styles.iconBtn} ${styles.cancel}`}>
-          <X size={14} />
+          <X size={17} />
         </button>
       </div>
     </div>

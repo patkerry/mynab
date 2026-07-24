@@ -70,6 +70,8 @@
 }
 .checkbox {
   cursor: pointer;
+  width: 16px;
+  height: 16px;
 }
 .right {
   text-align: right;
@@ -144,17 +146,34 @@
   justify-content: flex-end;
 }
 .clearToggle {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   display: grid;
   place-items: center;
   color: #fff;
 }
+/* Per-row one-click approve for a pending row that already has a category (accepts the guess). */
+.approveBtn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .iconBtn {
   color: var(--ink3);
   display: grid;
   place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.iconBtn:hover {
+  background: var(--paper);
+  color: var(--neg);
 }
 .pagination {
   display: flex;

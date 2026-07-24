@@ -64,6 +64,11 @@ export function AccountsView({
     setSelected(new Set());
     showToast(approved > 0 ? `Approved ${approved} transaction${approved > 1 ? "s" : ""}` : "Nothing to approve", approved > 0 ? "success" : "error");
   };
+  // One-click approve for a single pending row (accepts its guessed category).
+  const approveRow = async (id: string) => {
+    const { approved } = await approvePending([id]);
+    showToast(approved > 0 ? "Approved 1 transaction" : "Nothing to approve", approved > 0 ? "success" : "error");
+  };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
   // catName (ynab-clone.jsx line 542), where both cases carried categoryId: null.
@@ -251,7 +256,7 @@ export function AccountsView({
                 key={t.id}
                 accounts={accounts}
                 categories={categories}
-                allowTransfer={false}
+                allowTransfer
                 initial={txnToDraft(t)}
                 onSubmit={(draft) => updateTransaction(t.id, draft)}
                 onClose={() => setEditingId(null)}
@@ -302,18 +307,31 @@ export function AccountsView({
                 {fmt(t.amountCents)}
               </span>
               <div className={styles.rowActions}>
-                <button
-                  title={t.pending ? "Approve this transaction before clearing" : t.cleared ? "Cleared" : "Mark cleared"}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const result = await toggleCleared(t.id);
-                    if (!result.ok) showToast(result.reason);
-                  }}
-                  className={styles.clearToggle}
-                  style={{ background: t.cleared ? "var(--pos)" : "var(--line)", opacity: t.pending ? 0.4 : 1 }}
-                >
-                  <Check size={13} strokeWidth={3} />
-                </button>
+                {approvable(t) ? (
+                  <button
+                    title="Approve — accept the category and mark reviewed"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      approveRow(t.id);
+                    }}
+                    className={styles.approveBtn}
+                  >
+                    Approve
+                  </button>
+                ) : (
+                  <button
+                    title={t.pending ? "Categorize this transaction before it can be cleared" : t.cleared ? "Cleared" : "Mark cleared"}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const result = await toggleCleared(t.id);
+                      if (!result.ok) showToast(result.reason);
+                    }}
+                    className={styles.clearToggle}
+                    style={{ background: t.cleared ? "var(--pos)" : "var(--line)", opacity: t.pending ? 0.4 : 1 }}
+                  >
+                    <Check size={15} strokeWidth={3} />
+                  </button>
+                )}
                 <button
                   title="Delete"
                   onClick={(e) => {
@@ -322,7 +340,7 @@ export function AccountsView({
                   }}
                   className={styles.iconBtn}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={17} />
                 </button>
               </div>
             </div>
