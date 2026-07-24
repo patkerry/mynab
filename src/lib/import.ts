@@ -4,6 +4,7 @@ import { parseMoney, uid } from "@/lib/format";
 import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
 import { isQfx, parseQfx } from "@/lib/qfx";
 import { buildHistoryMap, guessCategoryId, KNOWN_MERCHANTS } from "@/lib/merchant";
+import { IMPORTED_TXN_STATE } from "@/lib/register";
 import type { ImportResult } from "@/lib/types";
 
 // The transaction-import pipeline (CSV + QFX/OFX), extracted from accounts/actions.ts so that
@@ -145,10 +146,10 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
           kind: "NORMAL" as const,
           categoryId,
           amountCents: r.amountCents,
-          // Cleared on import: an export only contains transactions that already posted (see the
-          // doc comment above). Manual entries still start uncleared.
-          cleared: true,
-          pending: true,
+          // Cleared-but-pending on import (see IMPORTED_TXN_STATE): an export only contains
+          // transactions that already posted, but they still await human review. This exact pairing
+          // is what keeps the register header's Uncleared sum over disjoint sets — see register.ts.
+          ...IMPORTED_TXN_STATE,
           externalId: r.externalId,
           importBatchId,
         };

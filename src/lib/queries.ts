@@ -107,11 +107,13 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     // page — computed here as separate aggregate-only queries (cheap, no row materialization)
     // rather than derived client-side from a (now-paginated) transactions array.
     prisma.transaction.aggregate({ where: { ...where, cleared: true }, _sum: { amountCents: true } }),
+    // These two WHERE filters ARE the register buckets defined in register.ts (isUncleared /
+    // isPending); the header sums both as "Uncleared". Keep them in sync with that module.
     prisma.transaction.aggregate({ where: { ...where, cleared: false }, _sum: { amountCents: true } }),
     prisma.transaction.count({ where: { ...where, pending: true } }),
     // Dollar total of unapproved (imported, pending) rows. Disjoint from unclearedCents: imported
-    // rows land cleared:true (see import.ts), so pending rows never fall in the cleared:false set —
-    // the header can sum the two without double-counting.
+    // rows land cleared:true (see IMPORTED_TXN_STATE in register.ts), so pending rows never fall in
+    // the cleared:false set — the header can sum the two without double-counting.
     prisma.transaction.aggregate({ where: { ...where, pending: true }, _sum: { amountCents: true } }),
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which

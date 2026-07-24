@@ -209,13 +209,15 @@ These exist for data migration/generation/validation, not the running app itself
   - **No DB/integration tests.** Everything in `src/lib/queries.ts` and the Server Actions
     (`accounts/actions.ts`, etc.) runs live Prisma — there is no test harness that stands up a DB,
     so those paths are exercised only by hand.
-  - The **1.0 sidebar/register additions ship untested**: Ready-to-Assign in `getSidebarData`, the
-    `pendingCents`/Uncleared header stat, and the user-name display. In particular the "Uncleared =
-    uncleared + pending, over disjoint sets" invariant (documented above) rests on `import.ts`
-    always writing `cleared: true, pending: true`; it is asserted only in prose, not in a test,
-    because the header total is computed from Prisma `_sum` aggregates and can't be unit-tested
-    without a DB harness (a pure reimplementation test would prove nothing about the real query).
-    If you add DB integration tests, lock this invariant first.
+  - Most **1.0 sidebar/register additions ship untested**: Ready-to-Assign in `getSidebarData` and
+    the user-name display have no tests (both are thin server-side reads).
+  - The **"Uncleared = uncleared + pending, over disjoint sets" invariant IS locked** — the state
+    rule it depends on (imported rows are `cleared: true, pending: true`, so a pending row is never
+    in the `cleared: false` bucket) lives in `src/lib/register.ts` (`IMPORTED_TXN_STATE` +
+    `isUncleared`/`isPending`, used by `import.ts` and mirrored by the aggregates in `queries.ts`)
+    and is asserted in `register.test.ts`. What is *still* untested is the Prisma `_sum` aggregation
+    itself in `getAccountTransactions` — that needs a DB harness (a pure reimplementation would
+    prove nothing about the real query). If you add DB integration tests, start there.
 
 ### Playwright (environment-specific)
 
