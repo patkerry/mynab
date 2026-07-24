@@ -262,7 +262,7 @@ export function AccountsView({
           return (
             <div
               key={t.id}
-              className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow}`}
+              className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
               onClick={() => {
                 if (!transfer) {
                   setEditingId(t.id);

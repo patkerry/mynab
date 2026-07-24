@@ -88,6 +88,11 @@
   border-bottom: 1px solid var(--line);
   font-size: 13.5px;
 }
+/* Approved (non-pending) rows get a clean white fill so they read as clearly "done" against the
+   warm-tinted pending rows (.txn-pending). Applied only to non-pending rows in AccountsView. */
+.approved {
+  background: var(--field);
+}
 .dateCell {
   display: flex;
   align-items: center;
