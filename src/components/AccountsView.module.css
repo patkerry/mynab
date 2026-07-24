@@ -19,7 +19,7 @@
   padding: 9px 12px;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--field);
   font-weight: 600;
 }
 .selectActive {

@@ -6,6 +6,7 @@
   --ink3: #a99e8c;
   --paper: #ece4d6;
   --surface: #f8f4ec;
+  --field: #ffffff; /* input/textarea/select fill — theme-aware so typed --ink text always contrasts */
   --line: #e2dac9;
   --pos: #4e7a52;
   --posSoft: #e5ecdd;
@@ -31,6 +32,7 @@
     --ink3: #7c7264;
     --paper: #201c17;
     --surface: #2b2620;
+    --field: #1c1813; /* darker-than-surface inset field; --ink (#f2ebdd) on it is high-contrast */
     --line: #3a342b;
     --pos: #8fb383;
     --posSoft: #2f3a2b;
@@ -102,10 +104,17 @@ button {
   background: none;
 }
 input,
-select {
+select,
+textarea {
   font-family: inherit;
   font-size: 14px;
   color: var(--ink);
+}
+/* Placeholder must stay legible against --field in both themes (browser default is too faint). */
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink3);
+  opacity: 1;
 }
 .btn {
   display: inline-flex;
@@ -139,7 +148,7 @@ select {
   padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--field);
   font-variant-numeric: tabular-nums;
   transition: 0.12s;
 }
@@ -233,7 +242,7 @@ select {
   padding: 10px 12px;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--field);
 }
 .field input:focus,
 .field select:focus {

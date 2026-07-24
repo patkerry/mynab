@@ -12,7 +12,7 @@
   padding: 7px 9px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--field);
   font-size: 13px;
 }
 /* Error state on submit: flash every field's border red (set on the row). */
