@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, CheckCheck, Trash2, ScrollText, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, CheckCheck, Trash2, ScrollText, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
+import { deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
@@ -185,12 +185,6 @@ export function AccountsView({
             <span className={styles.statLabel}>
               Balance <b className="num" style={{ color: clearedCents + unclearedCents < 0 ? "var(--neg)" : "var(--ink)" }}>{fmt(clearedCents + unclearedCents)}</b>
             </span>
-            <span className={styles.statLabel}>
-              Cleared <b className={`num ${styles.statVal}`}>{fmt(clearedCents)}</b>
-            </span>
-            <span className={styles.statLabel}>
-              Uncleared <b className={`num ${styles.statVal}`}>{fmt(unclearedCents)}</b>
-            </span>
             {pendingCount > 0 && <span className={styles.pendingNote}>{pendingCount} pending — needs approval</span>}
             {accountFilter !== "all" && (
               <span className={styles.muted3}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
@@ -333,7 +327,7 @@ export function AccountsView({
                 {fmt(t.amountCents)}
               </span>
               <div className={styles.rowActions}>
-                {approvable(t) ? (
+                {approvable(t) && (
                   <button
                     title="Approve — accept the category and mark reviewed"
                     onClick={(e) => {
@@ -343,20 +337,6 @@ export function AccountsView({
                     className={styles.approveBtn}
                   >
                     Approve
-                  </button>
-                ) : (
-                  <button
-                    title={t.pending ? "Categorize this transaction before it can be cleared" : t.cleared ? "Cleared" : "Mark cleared"}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const result = await toggleCleared(t.id);
-                      if (!result.ok) showToast(result.reason);
-                      else router.refresh();
-                    }}
-                    className={styles.clearToggle}
-                    style={{ background: t.cleared ? "var(--pos)" : "var(--line)", opacity: t.pending ? 0.4 : 1 }}
-                  >
-                    <Check size={15} strokeWidth={3} />
                   </button>
                 )}
                 <button
