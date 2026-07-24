@@ -158,7 +158,7 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   const pageSize = ACCOUNT_TXNS_PAGE_SIZE;
   const skip = (filters.page - 1) * pageSize;
 
-  const [transactions, totalCount, clearedAgg, unclearedAgg, pendingCount, pendingAgg, accounts, categories, lastReconciliation] = await Promise.all([
+  const [transactions, totalCount, stateBuckets, accounts, categories, lastReconciliation] = await Promise.all([
     // Order needs a TOTALLY deterministic tiebreaker. date alone ties constantly; even
     // date+createdAt ties for imported rows (a whole file's rows share one createMany timestamp),
     // and Postgres then returns tied rows in arbitrary heap order — which shifts after any update,
@@ -175,17 +175,12 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     }),
     prisma.transaction.count({ where }),
     // Cleared/uncleared/pending totals must reflect the FULL filtered set, not just the current
-    // page — computed here as separate aggregate-only queries (cheap, no row materialization)
-    // rather than derived client-side from a (now-paginated) transactions array.
-    prisma.transaction.aggregate({ where: { ...where, cleared: true }, _sum: { amountCents: true } }),
-    // These two WHERE filters ARE the register buckets defined in register.ts (isUncleared /
-    // isPending); the header sums both as "Uncleared". Keep them in sync with that module.
-    prisma.transaction.aggregate({ where: { ...where, cleared: false }, _sum: { amountCents: true } }),
-    prisma.transaction.count({ where: { ...where, pending: true } }),
-    // Dollar total of unapproved (imported, pending) rows. Disjoint from unclearedCents: imported
-    // rows land cleared:true (see IMPORTED_TXN_STATE in register.ts), so pending rows never fall in
-    // the cleared:false set — the header can sum the two without double-counting.
-    prisma.transaction.aggregate({ where: { ...where, pending: true }, _sum: { amountCents: true } }),
+    // page. ONE grouped aggregate replaces what used to be four separate scans of the filtered
+    // set: grouping by (cleared, pending) yields every bucket the header needs. The buckets are
+    // the register-state axes from register.ts (isUncleared / isPending) — imported rows land
+    // cleared:true+pending:true, so the pending buckets never overlap the cleared:false ones and
+    // the header can sum uncleared + pending without double-counting.
+    prisma.transaction.groupBy({ by: ["cleared", "pending"], where, _sum: { amountCents: true }, _count: { _all: true } }),
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     // Payment categories are excluded here (unlike getBudgetPageData's `categories`, which
     // needs them for computeDerived): they're never a valid categoryId for a transaction
@@ -197,15 +192,17 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     // history to show.
     filters.accountId !== "all" ? prisma.reconciliation.findFirst({ where: { budgetId, accountId: filters.accountId }, orderBy: { createdAt: "desc" } }) : null,
   ]);
+  const bucketSum = (pred: (b: { cleared: boolean; pending: boolean }) => boolean) =>
+    stateBuckets.filter(pred).reduce((s, b) => s + (b._sum.amountCents ?? 0), 0);
   return {
     transactions,
     totalCount,
     page: filters.page,
     pageSize,
-    clearedCents: clearedAgg._sum.amountCents ?? 0,
-    unclearedCents: unclearedAgg._sum.amountCents ?? 0,
-    pendingCount,
-    pendingCents: pendingAgg._sum.amountCents ?? 0,
+    clearedCents: bucketSum((b) => b.cleared),
+    unclearedCents: bucketSum((b) => !b.cleared),
+    pendingCount: stateBuckets.filter((b) => b.pending).reduce((s, b) => s + b._count._all, 0),
+    pendingCents: bucketSum((b) => b.pending),
     accounts,
     categories,
     lastReconciliation,

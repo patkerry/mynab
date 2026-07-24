@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Plus, Split as SplitIcon, X } from "lucide-react";
 import { TXN_GRID, fmt, parseMoney } from "@/lib/format";
 import { validateSplitDraft, type SplitLineDraft } from "@/lib/splits";
+import { TRANSFER_PREFIX, transferSentinel } from "@/lib/draft";
 import { useToast } from "./toast/ToastContext";
 import type { Account, Category } from "@/generated/prisma-postgres/client";
 import type { TxnDraft } from "@/lib/types";
@@ -46,7 +47,7 @@ export function TxnEditorRow({
   const [direction, setDirection] = useState<"inflow" | "outflow">(initial.splitDirection ?? "outflow");
 
   const isIncome = categoryId === "income";
-  const isTransfer = categoryId.startsWith("transfer:");
+  const isTransfer = categoryId.startsWith(TRANSFER_PREFIX);
   const isSplit = categoryId === "split";
   const accountType = accounts.find((a) => a.id === accountId)?.type;
   // RTA (income) split lines are forbidden on credit cards — see validateSplitDraft.
@@ -101,7 +102,7 @@ export function TxnEditorRow({
     // user gets an immediate, specific reason instead of a generic error border after a
     // round-trip — the destination account list includes the source account itself, since
     // "transfer to any other account" doesn't exclude the one currently selected.
-    if (isTransfer && categoryId.slice(9) === accountId) {
+    if (isTransfer && categoryId.slice(TRANSFER_PREFIX.length) === accountId) {
       return fail("Can't transfer an account to itself — pick a different destination account.");
     }
     // A NORMAL transaction needs a category to be saved/approved — enforced server-side in
@@ -178,7 +179,7 @@ export function TxnEditorRow({
             {allowTransfer && (
               <optgroup label="Transfer to">
                 {accounts.map((a) => (
-                  <option key={a.id} value={"transfer:" + a.id}>
+                  <option key={a.id} value={transferSentinel(a.id)}>
                     {a.name}
                   </option>
                 ))}

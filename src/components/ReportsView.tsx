@@ -107,7 +107,8 @@ export function ReportsView({
                 <Tooltip formatter={(v) => money(Number(v))} cursor={{ fill: "var(--paper)" }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="Assigned" fill="var(--accent)" radius={[0, 4, 4, 0]} barSize={9} cursor="pointer" onClick={(d: { id?: string }) => drill(d?.id)} />
-                <Bar dataKey="Spent" fill={catColor(5)} radius={[0, 4, 4, 0]} barSize={9} cursor="pointer" onClick={(d: { id?: string }) => drill(d?.id)} />
+                {/* Clay against the sage "Assigned" bar: spent = consumed, warm vs the green plan. */}
+                <Bar dataKey="Spent" fill={catColor(2)} radius={[0, 4, 4, 0]} barSize={9} cursor="pointer" onClick={(d: { id?: string }) => drill(d?.id)} />
               </BarChart>
             </ResponsiveContainer>
           )}

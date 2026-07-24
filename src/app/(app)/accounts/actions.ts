@@ -6,6 +6,7 @@ import { requireBudget } from "@/lib/budget-context";
 import { parseMoney, uid, curYM, monthKeyOf, todayLocal } from "@/lib/format";
 import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
 import { validateSplitDraft, splitsSumToParent, type ParsedSplitLine } from "@/lib/splits";
+import { interpretDraft } from "@/lib/draft";
 import { runImport } from "@/lib/import";
 import type { Prisma, AccountType } from "@/generated/prisma-postgres/client";
 import type { TxnDraft, ImportResult } from "@/lib/types";
@@ -114,38 +115,26 @@ export type PossibleDuplicate = { date: string; payee: string; amountCents: numb
 // between the same accounts on the same day for the same amount is a real, unremarkable case.
 export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDuplicate | null> {
   const { budgetId } = await requireBudget("read");
-  if (draft.categoryId.startsWith("transfer:")) return null;
-  const cents = parseMoney(draft.amount);
-  if (!cents || !draft.accountId) return null;
-  const isIncome = draft.categoryId === "income";
-  // A split parent's sign comes from its direction toggle, not from being income/spending.
-  const inflow = isIncome || (draft.categoryId === "split" && draft.splitDirection === "inflow");
-  const amountCents = inflow ? cents : -cents;
-  const payee = draft.payee.trim() || (isIncome ? "Income" : "Payee");
+  const d = interpretDraft(draft);
+  if (d.kind === "invalid" || d.kind === "transfer") return null;
 
   const existing = await prisma.transaction.findFirst({
-    where: { budgetId, accountId: draft.accountId, date: draft.date, payee: { equals: payee, mode: "insensitive" }, amountCents, deletedAt: null },
+    where: { budgetId, accountId: draft.accountId, date: draft.date, payee: { equals: d.payee, mode: "insensitive" }, amountCents: d.cents, deletedAt: null },
   });
   return existing ? { date: existing.date, payee: existing.payee, amountCents: existing.amountCents } : null;
 }
 
-// Ports addTxn (ynab-clone.jsx lines 575-596): categoryId is "transfer:<accountId>",
-// "income", "" (uncategorized), or a real category id.
+// Ports addTxn (ynab-clone.jsx lines 575-596). Branches on interpretDraft (src/lib/draft.ts) —
+// the single, unit-tested interpreter of the categoryId sentinel string — so sign rules and
+// sentinel parsing can't drift between here, updateTransaction, and the editor.
 export async function addTransaction(draft: TxnDraft): Promise<boolean> {
   const { budgetId } = await requireBudget("write");
-  const cents = parseMoney(draft.amount);
-  if (!cents || !draft.accountId) return false;
+  const d = interpretDraft(draft);
+  if (d.kind === "invalid") return false;
   const memo = (draft.memo || "").trim();
 
-  if (draft.categoryId.startsWith("transfer:")) {
-    // A transfer's direction is already fully expressed by which account is picked as source
-    // vs. destination — allowing a negative amount here (unlike a normal transaction, where
-    // it deliberately means "refund/inflow") only lets a same-signed pair of legs get flipped,
-    // which buildActivityByMonth's `amountCents > 0 = payment` check would then misread as a
-    // payment landing on a card that actually just took on more debt.
-    if (cents <= 0) return false;
-    const toId = draft.categoryId.slice(9);
-    if (!toId || toId === draft.accountId) return false;
+  if (d.kind === "transfer") {
+    const toId = d.toAccountId;
     // Both legs must be accounts in the active budget.
     const [fromAcct, toAcct] = await Promise.all([
       prisma.account.findFirst({ where: { id: draft.accountId, budgetId } }),
@@ -165,7 +154,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: -cents,
+          amountCents: -d.cents,
           cleared: true,
           memo,
           transferId,
@@ -180,7 +169,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: cents,
+          amountCents: d.cents,
           cleared: true,
           memo,
           transferId,
@@ -188,7 +177,7 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
         },
       }),
     ]);
-  } else if (draft.categoryId === "income") {
+  } else if (d.kind === "income") {
     const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
     if (!acct) return false;
     await prisma.transaction.create({
@@ -196,15 +185,15 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
         budgetId,
         accountId: draft.accountId,
         date: draft.date,
-        payee: draft.payee.trim() || "Income",
+        payee: d.payee,
         kind: "INCOME",
         categoryId: null,
-        amountCents: cents,
+        amountCents: d.cents,
         cleared: true,
         memo,
       },
     });
-  } else if (draft.categoryId === "split") {
+  } else if (d.kind === "split") {
     // Split: parent stays NORMAL with categoryId null; the lines (which must sum exactly to the
     // parent amount — validateSplitDraft enforces it) carry the category/RTA allocations. Checked
     // BEFORE the plain-NORMAL fallback so the "split" sentinel can never persist as a category id.
@@ -238,27 +227,26 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
   } else {
     const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
     if (!acct) return false;
-    if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
-    const categoryId = draft.categoryId || null;
+    if (d.categoryId && (await isPaymentCategory(d.categoryId, budgetId))) return false;
     // A manually-added transaction is created already-approved (pending: false), so hold it to the
     // same rule as approving an import (see updateTransaction): a NORMAL transaction needs a
     // category. INCOME/TRANSFER take the branches above and are exempt.
-    if (categoryId === null) return false;
+    if (d.categoryId === null) return false;
     await prisma.$transaction(async (tx) => {
       await tx.transaction.create({
         data: {
           budgetId,
           accountId: draft.accountId,
           date: draft.date,
-          payee: draft.payee.trim() || "Payee",
+          payee: d.payee,
           kind: "NORMAL",
-          categoryId,
-          amountCents: -cents,
+          categoryId: d.categoryId,
+          amountCents: d.cents,
           cleared: true,
           memo,
         },
       });
-      await applyOverspendCoverage(tx, budgetId, draft.accountId, categoryId, draft.date);
+      await applyOverspendCoverage(tx, budgetId, draft.accountId, d.categoryId, draft.date);
     });
   }
   revalidateAll();
@@ -272,8 +260,8 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
 // handles normal/income/pending rows as input.
 export async function updateTransaction(id: string, draft: TxnDraft): Promise<boolean> {
   const { budgetId } = await requireBudget("write");
-  const cents = parseMoney(draft.amount);
-  if (!cents || !draft.accountId) return false;
+  const d = interpretDraft(draft);
+  if (d.kind === "invalid") return false;
   const memo = (draft.memo || "").trim();
 
   // The edited row and its new account must both belong to the active budget.
@@ -283,16 +271,14 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   ]);
   if (!owned || !acct) return false;
 
-  if (draft.categoryId.startsWith("transfer:")) {
+  if (d.kind === "transfer") {
     // Convert this (normal/pending) row into a linked transfer: the edited row becomes the source
     // leg and a matching counterpart leg is created in the destination account — the same two-leg
     // shape addTransaction produces. One-way only: existing transfers are delete-only (never opened
     // in the editor — see the row onClick guard in AccountsView), so there's no prior counterpart to
-    // reconcile here. Sign rules mirror addTransaction: positive amount, source = -cents (outflow),
+    // reconcile here. Sign rules come from interpretDraft: positive amount, source = -cents,
     // counterpart = +cents (e.g. a "transfer to credit card" lands as a payment on the card).
-    if (cents <= 0) return false;
-    const toId = draft.categoryId.slice(9);
-    if (!toId || toId === draft.accountId) return false;
+    const toId = d.toAccountId;
     const toAcct = await prisma.account.findFirst({ where: { id: toId, budgetId }, select: { id: true } });
     if (!toAcct) return false;
     const transferId = uid("xfer");
@@ -308,7 +294,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: -cents,
+          amountCents: -d.cents,
           memo,
           pending: false,
           transferId,
@@ -323,7 +309,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: cents,
+          amountCents: d.cents,
           cleared: true,
           memo,
           pending: false,
@@ -332,7 +318,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
         },
       }),
     ]);
-  } else if (draft.categoryId === "income") {
+  } else if (d.kind === "income") {
     await prisma.$transaction([
       prisma.transactionSplit.deleteMany({ where: { transactionId: id } }),
       prisma.transaction.update({
@@ -343,8 +329,8 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           memo,
           kind: "INCOME",
           categoryId: null,
-          amountCents: cents,
-          payee: draft.payee.trim() || "Income",
+          amountCents: d.cents,
+          payee: d.payee,
           // Saving an edit is how a file-imported (pending) row gets reviewed — this save IS
           // the approval. A no-op for already-approved transactions.
           pending: false,
@@ -354,7 +340,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
         },
       }),
     ]);
-  } else if (draft.categoryId === "split") {
+  } else if (d.kind === "split") {
     // Split save: replace the parent's shape and its whole line set atomically. Approval-on-save
     // semantics match the plain NORMAL branch (a pending imported row can be split during review).
     const v = await resolveSplitValidation(budgetId, draft);
@@ -385,13 +371,13 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       );
     });
   } else {
-    if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
-    const categoryId = draft.categoryId || null;
+    if (d.categoryId && (await isPaymentCategory(d.categoryId, budgetId))) return false;
     // Saving is how a pending import gets approved (pending -> false), so a NORMAL transaction
     // must have a category to be saved: approving an uncategorized purchase would leave money
     // that never shows up against any budget category. INCOME/TRANSFER take the branches above
     // and are intentionally categoryId: null, so they're unaffected.
-    if (categoryId === null) return false;
+    if (d.categoryId === null) return false;
+    const categoryId = d.categoryId;
     await prisma.$transaction(async (tx) => {
       // Converting a split row back to a single category discards its lines.
       await tx.transactionSplit.deleteMany({ where: { transactionId: id } });
@@ -403,8 +389,8 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           memo,
           kind: "NORMAL",
           categoryId,
-          amountCents: -cents,
-          payee: draft.payee.trim() || "Payee",
+          amountCents: d.cents,
+          payee: d.payee,
           pending: false,
           // Approving a pending (imported, already-posted) row also clears it — one step, not two.
           // undefined leaves cleared untouched when merely editing an already-approved row.
