@@ -65,11 +65,13 @@ export function AccountsView({
     const { approved } = await approvePending(ids);
     setSelected(new Set());
     showToast(approved > 0 ? `Approved ${approved} transaction${approved > 1 ? "s" : ""}` : "Nothing to approve", approved > 0 ? "success" : "error");
+    router.refresh();
   };
   // One-click approve for a single pending row (accepts its guessed category).
   const approveRow = async (id: string) => {
     const { approved } = await approvePending([id]);
     showToast(approved > 0 ? "Approved 1 transaction" : "Nothing to approve", approved > 0 ? "success" : "error");
+    router.refresh();
   };
 
   // Undo the most recent import — removes the un-reviewed rows it added (see undoImport).
@@ -79,6 +81,7 @@ export function AccountsView({
     if (!window.confirm(`Undo the last import? This permanently removes the ${n} un-reviewed transaction${n === 1 ? "" : "s"} it added.`)) return;
     const { removed } = await undoImport(lastImportBatch.id);
     showToast(removed > 0 ? `Removed ${removed} imported transaction${removed === 1 ? "" : "s"}` : "Nothing to undo", removed > 0 ? "success" : "error");
+    router.refresh();
   };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
@@ -136,6 +139,7 @@ export function AccountsView({
     // A newly-added transaction is almost always recent, so with the newest-first sort it would
     // otherwise be invisible if the user is deep in an older page.
     if (ok && page !== 1) goToPage(1);
+    else if (ok) router.refresh();
     return ok;
   };
 
@@ -276,7 +280,11 @@ export function AccountsView({
                 allowTransfer
                 saveLabel={t.pending ? "Approve" : "Save"}
                 initial={txnToDraft(t)}
-                onSubmit={(draft) => updateTransaction(t.id, draft)}
+                onSubmit={async (draft) => {
+                  const ok = await updateTransaction(t.id, draft);
+                  if (ok) router.refresh();
+                  return ok;
+                }}
                 onClose={() => setEditingId(null)}
               />
             );
@@ -343,6 +351,7 @@ export function AccountsView({
                       e.stopPropagation();
                       const result = await toggleCleared(t.id);
                       if (!result.ok) showToast(result.reason);
+                      else router.refresh();
                     }}
                     className={styles.clearToggle}
                     style={{ background: t.cleared ? "var(--pos)" : "var(--line)", opacity: t.pending ? 0.4 : 1 }}
@@ -352,9 +361,10 @@ export function AccountsView({
                 )}
                 <button
                   title="Delete"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    deleteTransaction(t.id);
+                    await deleteTransaction(t.id);
+                    router.refresh();
                   }}
                   className={styles.iconBtn}
                 >
