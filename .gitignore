@@ -68,3 +68,7 @@ next-env.d.ts
 
 # e2e next build dir
 /.next-e2e
+
+# demo video artifacts
+/demo-results
+/demo/out

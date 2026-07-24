@@ -11,6 +11,7 @@
     "lint": "eslint",
     "test": "npm run check:schema-parity && vitest run",
     "test:e2e": "playwright test",
+    "demo:video": "playwright test -c playwright.demo.config.ts",
     "check:schema-parity": "tsx scripts/check-schema-parity.ts",
     "db:generate": "prisma generate --schema prisma/schema.postgres.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
     "admin:set": "tsx scripts/set-admin.ts",
