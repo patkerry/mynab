@@ -192,7 +192,7 @@ export function AccountsView({
             className="btn btn-ghost"
             onClick={() => openModal({ type: "import", accountId: accountFilter !== "all" ? accountFilter : accounts[0]?.id || "", accounts })}
           >
-            <Upload size={15} /> Import CSV
+            <Upload size={15} /> Import
           </button>
           <button
             className="btn btn-primary"
