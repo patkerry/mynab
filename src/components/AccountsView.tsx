@@ -248,6 +248,7 @@ export function AccountsView({
             accounts={accounts}
             categories={categories}
             allowTransfer
+            saveLabel="Add"
             initial={{
               date: new Date().toISOString().slice(0, 10),
               payee: "",
@@ -273,6 +274,7 @@ export function AccountsView({
                 accounts={accounts}
                 categories={categories}
                 allowTransfer
+                saveLabel={t.pending ? "Approve" : "Save"}
                 initial={txnToDraft(t)}
                 onSubmit={(draft) => updateTransaction(t.id, draft)}
                 onClose={() => setEditingId(null)}

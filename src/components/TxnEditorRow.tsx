@@ -13,6 +13,7 @@ export function TxnEditorRow({
   categories,
   initial,
   allowTransfer = true,
+  saveLabel = "Save",
   onSubmit,
   onClose,
 }: {
@@ -20,6 +21,8 @@ export function TxnEditorRow({
   categories: Category[];
   initial: TxnDraft;
   allowTransfer?: boolean;
+  // Label for the confirm button — e.g. "Approve" when saving approves a pending imported row.
+  saveLabel?: string;
   onSubmit: (draft: TxnDraft) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -133,8 +136,8 @@ export function TxnEditorRow({
         style={{ color: isIncome ? "var(--posInk)" : "var(--ink)" }}
       />
       <div className={styles.actions}>
-        <button onClick={submit} title="Save (Enter)" className={`${styles.iconBtn} ${styles.save}`}>
-          <Check size={17} strokeWidth={3} />
+        <button onClick={submit} title={`${saveLabel} (Enter)`} className={styles.saveBtn}>
+          <Check size={15} strokeWidth={3} /> {saveLabel}
         </button>
         <button onClick={onClose} title="Cancel (Esc)" className={`${styles.iconBtn} ${styles.cancel}`}>
           <X size={17} />

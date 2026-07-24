@@ -39,9 +39,18 @@
   display: grid;
   place-items: center;
 }
-.save {
+.saveBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .cancel {
   background: var(--line);
