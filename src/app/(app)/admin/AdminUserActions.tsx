@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { suspendUser, reactivateUser, deleteUser } from "./actions";
 import styles from "./AdminUserActions.module.css";
 
@@ -18,6 +19,7 @@ export function AdminUserActions({
   isSelf: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   if (isSelf) return <span className={styles.you}>(you)</span>;
 
@@ -26,7 +28,7 @@ export function AdminUserActions({
       {suspended ? (
         <button
           disabled={pending}
-          onClick={() => startTransition(() => reactivateUser(userId))}
+          onClick={() => startTransition(async () => { await reactivateUser(userId); router.refresh(); })}
           className={`${styles.btn} ${styles.reactivate}`}
         >
           Reactivate
@@ -34,7 +36,7 @@ export function AdminUserActions({
       ) : (
         <button
           disabled={pending}
-          onClick={() => startTransition(() => suspendUser(userId))}
+          onClick={() => startTransition(async () => { await suspendUser(userId); router.refresh(); })}
           className={`${styles.btn} ${styles.suspend}`}
         >
           Suspend
@@ -44,7 +46,7 @@ export function AdminUserActions({
         disabled={pending}
         onClick={() => {
           if (confirm(`Permanently delete ${email} and the budgets they solely own? This cannot be undone.`)) {
-            startTransition(() => deleteUser(userId));
+            startTransition(async () => { await deleteUser(userId); router.refresh(); });
           }
         }}
         className={`${styles.btn} ${styles.delete}`}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { GripVertical, Pencil, Plus, Eye, EyeOff } from "lucide-react";
 import { useModal } from "./modal/ModalContext";
 import { reorderCategories, reorderGroups, setCategoryHidden, setGroupHidden } from "@/app/(app)/budget/actions";
@@ -9,6 +10,7 @@ import styles from "./CategoriesView.module.css";
 
 export function CategoriesView({ groups, categories }: { groups: CategoryGroup[]; categories: Category[] }) {
   const { openModal } = useModal();
+  const router = useRouter();
   const [dragCatId, setDragCatId] = useState<string | null>(null);
   const [dragGroupId, setDragGroupId] = useState<string | null>(null);
 
@@ -19,13 +21,13 @@ export function CategoriesView({ groups, categories }: { groups: CategoryGroup[]
   };
   const onCatDrop = (targetId: string, groupCatIds: string[]) => {
     if (dragCatId && dragCatId !== targetId && groupCatIds.includes(dragCatId)) {
-      reorderCategories(moveBefore(groupCatIds, dragCatId, targetId));
+      reorderCategories(moveBefore(groupCatIds, dragCatId, targetId)).then(() => router.refresh());
     }
     setDragCatId(null);
   };
   const onGroupDrop = (targetId: string) => {
     if (dragGroupId && dragGroupId !== targetId) {
-      reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId));
+      reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId)).then(() => router.refresh());
     }
     setDragGroupId(null);
   };
@@ -73,7 +75,7 @@ export function CategoriesView({ groups, categories }: { groups: CategoryGroup[]
                   <Pencil size={13} />
                 </button>
                 {cats.length > 0 && (
-                  <button onClick={() => setGroupHidden(g.id, !allHidden)} title={allHidden ? "Unhide group" : "Hide group"} className={styles.iconBtn}>
+                  <button onClick={async () => { await setGroupHidden(g.id, !allHidden); router.refresh(); }} title={allHidden ? "Unhide group" : "Hide group"} className={styles.iconBtn}>
                     {allHidden ? <Eye size={13} /> : <EyeOff size={13} />}
                   </button>
                 )}
@@ -103,7 +105,7 @@ export function CategoriesView({ groups, categories }: { groups: CategoryGroup[]
                     <button onClick={() => openModal({ type: "editCategory", cat: c })} title="Rename or delete category" className={styles.iconBtn}>
                       <Pencil size={13} />
                     </button>
-                    <button onClick={() => setCategoryHidden(c.id, !c.isHidden)} title={c.isHidden ? "Unhide category" : "Hide category"} className={styles.iconBtn}>
+                    <button onClick={async () => { await setCategoryHidden(c.id, !c.isHidden); router.refresh(); }} title={c.isHidden ? "Unhide category" : "Hide category"} className={styles.iconBtn}>
                       {c.isHidden ? <Eye size={13} /> : <EyeOff size={13} />}
                     </button>
                   </div>

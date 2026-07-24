@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Target, Eye, EyeOff, Pencil, GripVertical } from "lucide-react";
 import { fmt, parseMoney, addMonths } from "@/lib/format";
 import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
@@ -27,6 +28,7 @@ export function CatRow({
 }) {
   const draggable = !!onDragStart;
   const { openModal } = useModal();
+  const router = useRouter();
   const assigned = derived.assignedIn(c.id, month);
   const activity = derived.activityIn(c.id, month);
   const avail = derived.available(c.id, month);
@@ -50,17 +52,19 @@ export function CatRow({
         ? { color: "var(--ink3)", background: "var(--paper)" }
         : { color: "var(--posInk)", background: "var(--posSoft)" };
 
-  const commit = () => {
-    setAssigned(c.id, month, parseMoney(draft));
+  const commit = async () => {
+    await setAssigned(c.id, month, parseMoney(draft));
+    router.refresh();
   };
 
   // "Last month" reference: what was assigned to this category the previous month. Clicking it
   // copies that amount into this month's assignment (per-row "carry forward"). Reuses setAssigned.
   const lastAssigned = derived.assignedIn(c.id, addMonths(month, -1));
-  const fillFromLastMonth = () => {
+  const fillFromLastMonth = async () => {
     if (lastAssigned <= 0) return;
     setDraft((lastAssigned / 100).toFixed(2));
-    setAssigned(c.id, month, lastAssigned);
+    await setAssigned(c.id, month, lastAssigned);
+    router.refresh();
   };
 
   return (
@@ -110,7 +114,10 @@ export function CatRow({
           {!c.linkedAccountId && (
             <>
               <button
-                onClick={() => setCategoryHidden(c.id, !c.isHidden)}
+                onClick={async () => {
+                  await setCategoryHidden(c.id, !c.isHidden);
+                  router.refresh();
+                }}
                 title={c.isHidden ? "Unhide category" : "Hide category"}
                 className={styles.iconBtn}
               >

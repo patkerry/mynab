@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import type { Account, Category, CategoryGroup } from "@/generated/prisma-postgres/client";
 import { ModalHost } from "./ModalHost";
 
@@ -35,11 +36,19 @@ export function useModal() {
 // persistent root layout while BudgetView/AccountsView live in separate route segments.
 export function ModalProvider({ children }: { children: ReactNode }) {
   const [modal, setModal] = useState<ModalState>(null);
+  const router = useRouter();
+  // Closing a modal refreshes server data. Modals mutate via server actions, and in this Next 16
+  // setup revalidatePath doesn't auto-refresh the client — so a newly added/edited/deleted row
+  // wouldn't appear until reload. Refreshing on close covers every modal (a harmless no-op on Cancel).
+  const close = () => {
+    setModal(null);
+    router.refresh();
+  };
 
   return (
-    <ModalContext.Provider value={{ openModal: setModal, closeModal: () => setModal(null) }}>
+    <ModalContext.Provider value={{ openModal: setModal, closeModal: close }}>
       {children}
-      {modal && <ModalHost modal={modal} close={() => setModal(null)} />}
+      {modal && <ModalHost modal={modal} close={close} />}
     </ModalContext.Provider>
   );
 }

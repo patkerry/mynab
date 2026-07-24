@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Sparkles, Plus, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil, GripVertical } from "lucide-react";
 import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
@@ -43,6 +44,7 @@ export function BudgetView({
 }) {
   const { openModal } = useModal();
   const { showToast } = useToast();
+  const router = useRouter();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   // Drag-and-drop reorder. Categories reorder within their group; groups reorder among themselves.
   // The two drag states are independent, so a category drop on a group header (or vice versa) no-ops.
@@ -60,7 +62,7 @@ export function BudgetView({
       setDragCatId(null);
       return;
     }
-    reorderCategories(moveBefore(groupCatIds, dragCatId, targetId));
+    reorderCategories(moveBefore(groupCatIds, dragCatId, targetId)).then(() => router.refresh());
     setDragCatId(null);
   };
   const onGroupDrop = (targetId: string) => {
@@ -68,7 +70,7 @@ export function BudgetView({
       setDragGroupId(null);
       return;
     }
-    reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId));
+    reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId)).then(() => router.refresh());
     setDragGroupId(null);
   };
   const derived = useMemo(
@@ -84,6 +86,7 @@ export function BudgetView({
     } else {
       showToast("Nothing to auto-assign — no underfunded goals, or nothing left to assign");
     }
+    router.refresh();
   };
 
   const handleQuickBudget = async () => {
@@ -93,6 +96,7 @@ export function BudgetView({
     } else {
       showToast("Nothing to budget — no recent history to average, or every category is already assigned");
     }
+    router.refresh();
   };
 
   const rta = derived.readyToAssign;
@@ -208,7 +212,10 @@ export function BudgetView({
                     </button>
                     {cats.length > 0 && (
                       <button
-                        onClick={() => setGroupHidden(g.id, hiddenCats.length !== cats.length)}
+                        onClick={async () => {
+                          await setGroupHidden(g.id, hiddenCats.length !== cats.length);
+                          router.refresh();
+                        }}
                         title={hiddenCats.length === cats.length ? "Unhide category group" : "Hide category group"}
                         className={styles.iconBtn}
                       >
