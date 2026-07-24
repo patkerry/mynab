@@ -58,8 +58,8 @@ export function ReconcileModal({
           <div className={`num ${styles.balanceValue}`}>{fmt(currentBalanceCents)}</div>
         </div>
         <div className="field">
-          <label>Your actual bank balance</label>
-          <input value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" className="num" autoFocus />
+          <label htmlFor="f-your-actual-bank-balance">Your actual bank balance</label>
+          <input id="f-your-actual-bank-balance" value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
         <p className="hint">
           {diffCents === 0

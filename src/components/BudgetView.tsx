@@ -1,52 +1,38 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Sparkles, Plus, ChevronDown, ChevronUp, Eye, EyeOff, CalendarClock, Pencil, GripVertical } from "lucide-react";
-import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "@/lib/budget";
 import { fmt, addMonths, monthLabel, curYM } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
+import { useRunAction } from "./useRunAction";
 import { autoAssignGoals, quickBudget, setGroupHidden, reorderCategories, reorderGroups } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
-import type { Account, BudgetEntry, Category, CategoryGroup, Transaction, TransactionSplit } from "@/generated/prisma-postgres/client";
+import type { Category, CategoryGroup } from "@/generated/prisma-postgres/client";
+import type { BudgetPageModel, CatMonth } from "@/lib/types";
 import styles from "./BudgetView.module.css";
 
-function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], splits: TransactionSplit[], month: string): CatBreakdown {
-  const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries, splits }, categoryId, month);
-  if (!raw) return { sources: [], paymentsTotal: 0, paymentsCount: 0 };
-  return {
-    sources: raw.breakdown.map((b) =>
-      "sourceCategoryId" in b
-        ? { name: categories.find((c) => c.id === b.sourceCategoryId)?.name || "?", amount: b.amount }
-        : { name: `Transfer from ${accounts.find((a) => a.id === b.sourceAccountId)?.name || "?"}`, amount: b.amount }
-    ),
-    paymentsTotal: raw.payments.reduce((s, p) => s + p.amount, 0),
-    paymentsCount: raw.payments.length,
-  };
-}
+const EMPTY_ROW: CatMonth = { assigned: 0, activity: 0, avail: 0, lastAssigned: 0 };
 
 export function BudgetView({
   month,
   groups,
   categories,
-  accounts,
-  transactions,
-  budgetEntries,
-  splits,
+  model,
 }: {
   month: string;
   groups: CategoryGroup[];
   categories: Category[];
-  accounts: Account[];
-  transactions: Transaction[];
-  budgetEntries: BudgetEntry[];
-  splits: TransactionSplit[];
+  // Server-computed per-category numbers + breakdowns — the engine no longer runs client-side
+  // and the transaction history never reaches the browser (see getBudgetPageModel in queries.ts).
+  model: BudgetPageModel;
 }) {
   const { openModal } = useModal();
   const { showToast } = useToast();
   const router = useRouter();
+  const run = useRunAction();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   // Drag-and-drop reorder. Categories reorder within their group; groups reorder among themselves.
   // The two drag states are independent, so a category drop on a group header (or vice versa) no-ops.
@@ -64,7 +50,7 @@ export function BudgetView({
       setDragCatId(null);
       return;
     }
-    reorderCategories(moveBefore(groupCatIds, dragCatId, targetId)).then(() => router.refresh());
+    void run(() => reorderCategories(moveBefore(groupCatIds, dragCatId, targetId)));
     setDragCatId(null);
   };
   const onGroupDrop = (targetId: string) => {
@@ -72,17 +58,15 @@ export function BudgetView({
       setDragGroupId(null);
       return;
     }
-    reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId)).then(() => router.refresh());
+    void run(() => reorderGroups(moveBefore(groups.map((g) => g.id), dragGroupId, targetId)));
     setDragGroupId(null);
   };
-  const derived = useMemo(
-    () => computeDerived({ accounts, categories, transactions, budgetEntries, splits }, month),
-    [accounts, categories, transactions, budgetEntries, splits, month]
-  );
-  const lastMonth = addMonths(month, -1);
+  const row = (catId: string): CatMonth => model.rows[catId] ?? EMPTY_ROW;
 
   const handleAutoAssign = async () => {
-    const { count, totalCents } = await autoAssignGoals(month);
+    const result = await run(() => autoAssignGoals(month), { refresh: false });
+    if (!result) return;
+    const { count, totalCents } = result;
     if (count > 0) {
       showToast(`Auto-assigned ${fmt(totalCents)} across ${count} goal${count > 1 ? "s" : ""}`, "success");
     } else {
@@ -92,7 +76,9 @@ export function BudgetView({
   };
 
   const handleQuickBudget = async () => {
-    const { count, totalCents } = await quickBudget(month);
+    const result = await run(() => quickBudget(month), { refresh: false });
+    if (!result) return;
+    const { count, totalCents } = result;
     if (count > 0) {
       showToast(`Budgeted ${fmt(totalCents)} across ${count} categor${count > 1 ? "ies" : "y"} from your 3-month average`, "success");
     } else {
@@ -101,7 +87,7 @@ export function BudgetView({
     router.refresh();
   };
 
-  const rta = derived.readyToAssign;
+  const rta = model.rta;
   const rtaState = rta > 0 ? "pos" : rta < 0 ? "neg" : "zero";
   const banner = {
     pos: { label: "Ready to Assign", sub: "Give every dollar a job" },
@@ -117,10 +103,10 @@ export function BudgetView({
   // assign to them directly (per spec) and to see the transparency breakdown, so they get a
   // dedicated, always-visible section below the normal groups instead of vanishing entirely.
   const paymentCategories = categories.filter((c) => c.linkedAccountId);
-  const pcLastAssigned = paymentCategories.reduce((s, c) => s + derived.assignedIn(c.id, lastMonth), 0);
-  const pcAssigned = paymentCategories.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
-  const pcActivity = paymentCategories.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
-  const pcAvail = paymentCategories.reduce((s, c) => s + derived.available(c.id, month), 0);
+  const pcLastAssigned = paymentCategories.reduce((s, c) => s + row(c.id).lastAssigned, 0);
+  const pcAssigned = paymentCategories.reduce((s, c) => s + row(c.id).assigned, 0);
+  const pcActivity = paymentCategories.reduce((s, c) => s + row(c.id).activity, 0);
+  const pcAvail = paymentCategories.reduce((s, c) => s + row(c.id).avail, 0);
 
   return (
     <>
@@ -188,10 +174,10 @@ export function BudgetView({
             const visibleCats = cats.filter((c) => !c.isHidden);
             const hiddenCats = cats.filter((c) => c.isHidden);
             const isExpanded = expandedGroups[g.id] ?? false;
-            const grpLastAssigned = cats.reduce((s, c) => s + derived.assignedIn(c.id, lastMonth), 0);
-            const grpAssigned = cats.reduce((s, c) => s + derived.assignedIn(c.id, month), 0);
-            const grpActivity = cats.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
-            const grpAvail = cats.reduce((s, c) => s + derived.available(c.id, month), 0);
+            const grpLastAssigned = cats.reduce((s, c) => s + row(c.id).lastAssigned, 0);
+            const grpAssigned = cats.reduce((s, c) => s + row(c.id).assigned, 0);
+            const grpActivity = cats.reduce((s, c) => s + row(c.id).activity, 0);
+            const grpAvail = cats.reduce((s, c) => s + row(c.id).avail, 0);
             return (
               <div key={g.id} className={`card ${styles.groupCard}`}>
                 <div
@@ -214,10 +200,7 @@ export function BudgetView({
                     </button>
                     {cats.length > 0 && (
                       <button
-                        onClick={async () => {
-                          await setGroupHidden(g.id, hiddenCats.length !== cats.length);
-                          router.refresh();
-                        }}
+                        onClick={() => run(() => setGroupHidden(g.id, hiddenCats.length !== cats.length))}
                         title={hiddenCats.length === cats.length ? "Unhide category group" : "Hide category group"}
                         className={styles.iconBtn}
                       >
@@ -240,7 +223,7 @@ export function BudgetView({
                     key={c.id}
                     c={c}
                     month={month}
-                    derived={derived}
+                    data={row(c.id)}
                     onDragStart={() => setDragCatId(c.id)}
                     onDrop={() => onCatDrop(c.id, cats.map((x) => x.id))}
                   />
@@ -260,7 +243,7 @@ export function BudgetView({
                           key={c.id}
                           c={c}
                           month={month}
-                          derived={derived}
+                          data={row(c.id)}
                           onDragStart={() => setDragCatId(c.id)}
                           onDrop={() => onCatDrop(c.id, cats.map((x) => x.id))}
                         />
@@ -287,8 +270,8 @@ export function BudgetView({
                   key={c.id}
                   c={c}
                   month={month}
-                  derived={derived}
-                  breakdown={resolveBreakdown(c.id, categories, transactions, budgetEntries, accounts, splits, month)}
+                  data={row(c.id)}
+                  breakdown={model.breakdowns[c.id]}
                 />
               ))}
             </div>

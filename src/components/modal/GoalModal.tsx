@@ -56,8 +56,8 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
           </div>
         </div>
         <div className="field">
-          <label>{type === "MONTHLY" ? "Assign each month" : "Total to save"}</label>
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="num" autoFocus />
+          <label htmlFor="f-goal-amount">{type === "MONTHLY" ? "Assign each month" : "Total to save"}</label>
+          <input id="f-goal-amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
         <p className="hint">
           {isPaymentCategory

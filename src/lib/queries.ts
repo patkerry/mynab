@@ -1,7 +1,9 @@
 import { prisma } from "./db";
 import { getActiveBudgetId, getActiveBudgetOptional } from "./budget-context";
+import { computeDerived, computePaymentCategoryBreakdown, type CatBreakdown } from "./budget";
+import { addMonths } from "./format";
 import type { Prisma } from "@/generated/prisma-postgres/client";
-import type { AccountFilter, CategoryFilter } from "./types";
+import type { AccountFilter, BudgetPageModel, CatMonth, CategoryFilter } from "./types";
 
 // Every read here is scoped to the active budget (getActiveBudgetId): desktop resolves to the one
 // local budget, web to the user's selected budget. This is the primary guard against one budget's
@@ -57,15 +59,15 @@ export async function getSidebarData() {
   return { accounts, acctBalance, netWorth, readyToAssign };
 }
 
-// Returns raw rows rather than a computed `derived` object: BudgetView must be a Client
-// Component (inline-edit inputs, modal triggers), and functions like `derived.available()`
-// can't cross the Server->Client prop boundary. computeDerived() runs client-side instead,
-// mirroring the useMemo in the original single-file app almost exactly.
+// The /budget page's whole data story: fetch all-time rows (the engine is deliberately a pure
+// function over unfiltered history — see budget.ts), run computeDerived server-side, and return
+// a plain serializable model. derived.available() etc. are closures that can't cross the
+// Server->Client boundary, which is why the numbers are flattened per category here.
 //
 // `groups` excludes hidden ones (the singleton "Credit Card Payments" group) so it never gets
 // a visible row in BudgetView — but `categories` is NOT filtered: the linked payment category
 // it contains still has to reach computeDerived for available()/activityIn() to work.
-export async function getBudgetPageData() {
+export async function getBudgetPageModel(month: string) {
   const budgetId = await getActiveBudgetId();
   const [groups, categories, transactions, budgetEntries, accounts, splits] = await Promise.all([
     prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
@@ -75,7 +77,45 @@ export async function getBudgetPageData() {
     prisma.account.findMany({ where: { budgetId } }),
     prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  return { groups, categories, transactions, budgetEntries, accounts, splits };
+
+  // The engine runs HERE, server-side, and only the per-category numbers cross the wire.
+  // (This function used to return the raw rows and BudgetView ran computeDerived client-side —
+  // which meant serializing the entire transaction history into the RSC payload on every render
+  // and re-scanning it in the browser on every month click. O(all-time rows) per navigation.)
+  const inputs = { accounts, categories, transactions, budgetEntries, splits };
+  const derived = computeDerived(inputs, month);
+  const lastMonth = addMonths(month, -1);
+
+  const rows: Record<string, CatMonth> = {};
+  for (const c of categories) {
+    rows[c.id] = {
+      assigned: derived.assignedIn(c.id, month),
+      activity: derived.activityIn(c.id, month),
+      avail: derived.available(c.id, month),
+      lastAssigned: derived.assignedIn(c.id, lastMonth),
+    };
+  }
+
+  // Payment-category transparency breakdowns, names resolved server-side (the raw breakdown
+  // carries source category/account ids; the view only needs display strings + amounts).
+  const breakdowns: Record<string, CatBreakdown> = {};
+  for (const c of categories) {
+    if (!c.linkedAccountId) continue;
+    const raw = computePaymentCategoryBreakdown(inputs, c.id, month);
+    if (!raw) continue;
+    breakdowns[c.id] = {
+      sources: raw.breakdown.map((b) =>
+        "sourceCategoryId" in b
+          ? { name: categories.find((x) => x.id === b.sourceCategoryId)?.name || "?", amount: b.amount }
+          : { name: `Transfer from ${accounts.find((a) => a.id === b.sourceAccountId)?.name || "?"}`, amount: b.amount }
+      ),
+      paymentsTotal: raw.payments.reduce((s, p) => s + p.amount, 0),
+      paymentsCount: raw.payments.length,
+    };
+  }
+
+  const model: BudgetPageModel = { rta: derived.readyToAssign, rows, breakdowns };
+  return { groups, categories, model };
 }
 
 // Structure-only data for the Categories management page — groups + categories in display order, no
@@ -172,16 +212,20 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   };
 }
 
-export async function getReportsData() {
+// `fromDate` ("YYYY-MM-DD", the report window's first day) bounds the row fetch — every report
+// filters to the window anyway, so rows before it were fetched only to be discarded. The one
+// cumulative report (netWorthTrend) gets the pre-window history as a single SQL SUM baseline.
+export async function getReportsData(fromDate: string) {
   const budgetId = await getActiveBudgetId();
-  const [transactions, categories, budgetEntries, accounts, splits] = await Promise.all([
-    prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
+  const [transactions, categories, budgetEntries, accounts, splits, baselineAgg] = await Promise.all([
+    prisma.transaction.findMany({ where: { budgetId, deletedAt: null, date: { gte: fromDate } } }),
     prisma.category.findMany({ where: { budgetId } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
     prisma.account.findMany({ where: { budgetId } }),
-    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
+    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null, date: { gte: fromDate } } } }),
+    prisma.transaction.aggregate({ where: { budgetId, deletedAt: null, date: { lt: fromDate } }, _sum: { amountCents: true } }),
   ]);
-  return { transactions, categories, budgetEntries, accounts, splits };
+  return { transactions, categories, budgetEntries, accounts, splits, baselineCents: baselineAgg._sum.amountCents ?? 0 };
 }
 
 // The most recent file-import batch that still has un-reviewed (pending) rows — powers the

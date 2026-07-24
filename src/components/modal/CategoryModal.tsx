@@ -16,8 +16,8 @@ export function CategoryModal({ close, groupId }: { close: () => void; groupId: 
   return (
     <ModalShell title="New category" close={close} onSave={save} saveLabel="Add category">
       <div className="field">
-        <label>Category name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Netflix" autoFocus />
+        <label htmlFor="f-category-name">Category name</label>
+        <input id="f-category-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Netflix" autoFocus />
       </div>
     </ModalShell>
   );

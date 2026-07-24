@@ -60,8 +60,8 @@ export function EditEntityModal({
   return (
     <ModalShell title={title} close={close} onSave={save} saveLabel="Save">
       <div className="field">
-        <label>{label}</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} autoFocus />
+        <label htmlFor="f-entity-name">{label}</label>
+        <input id="f-entity-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} autoFocus />
       </div>
       <div className={styles.deleteZone}>
         <button

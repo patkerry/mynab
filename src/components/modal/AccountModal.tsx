@@ -33,8 +33,8 @@ export function AccountModal({ close }: { close: () => void }) {
   return (
     <ModalShell title="Add account" close={close} onSave={save} saveLabel="Add account">
       <div className="field">
-        <label>Account name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emergency Fund" autoFocus />
+        <label htmlFor="f-account-name">Account name</label>
+        <input id="f-account-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emergency Fund" autoFocus />
       </div>
       <div className="field">
         <label>Type</label>
@@ -47,8 +47,8 @@ export function AccountModal({ close }: { close: () => void }) {
         </div>
       </div>
       <div className="field">
-        <label>Current balance</label>
-        <input value={bal} onChange={(e) => setBal(e.target.value)} placeholder="0.00" className="num" />
+        <label htmlFor="f-current-balance">Current balance</label>
+        <input id="f-current-balance" value={bal} onChange={(e) => setBal(e.target.value)} placeholder="0.00" className="num" />
       </div>
       <p className="hint">{BALANCE_HINT[type] ?? DEFAULT_HINT}</p>
     </ModalShell>

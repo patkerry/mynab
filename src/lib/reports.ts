@@ -111,11 +111,13 @@ export function incomeVsSpending(txns: Transaction[], months: string[]) {
   });
 }
 
-// Cumulative net worth at each month-end in the window (all rows dated on/before that month-end).
-export function netWorthTrend(txns: Transaction[], months: string[]) {
+// Cumulative net worth at each month-end in the window. `baselineCents` is the pre-window sum
+// (everything dated before the window start) so callers can fetch only the window's rows and
+// let SQL aggregate the rest — see getReportsData. Default 0 keeps all-rows callers working.
+export function netWorthTrend(txns: Transaction[], months: string[], baselineCents = 0) {
   return months.map((ym) => {
     const end = ym + "-31";
-    const nw = txns.filter((t) => t.date <= end).reduce((s, t) => s + t.amountCents, 0);
+    const nw = baselineCents + txns.filter((t) => t.date <= end).reduce((s, t) => s + t.amountCents, 0);
     return { name: monthShort(ym), value: nw / 100 };
   });
 }

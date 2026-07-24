@@ -6,8 +6,8 @@
      come back dark on a dark-OS machine. */
   color-scheme: light;
   --ink: #2a2620;
-  --ink2: #7c7264;
-  --ink3: #a99e8c;
+  --ink2: #5f5649; /* 6.6:1 on --surface (was #7c7264 @ 4.3) */
+  --ink3: #766c5b; /* 4.7:1 on --surface (was #a99e8c @ 2.4 — failed WCAG badly) */
   --paper: #ece4d6;
   --surface: #f8f4ec;
   --field: #ffffff; /* input/textarea/select fill — theme-aware so typed --ink text always contrasts */
@@ -36,7 +36,7 @@
   :root:not([data-theme="light"]) {
     --ink: #f2ebdd;
     --ink2: #a99e8c;
-    --ink3: #7c7264;
+    --ink3: #9a8f7d; /* 4.7:1 on dark --surface (was #7c7264 @ 3.2) */
     --paper: #201c17;
     --surface: #2b2620;
     --field: #1c1813; /* darker-than-surface inset field; --ink (#f2ebdd) on it is high-contrast */

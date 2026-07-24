@@ -128,8 +128,8 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
       <p className="hint">
         CSV needs columns Date, Payee, Amount, and optionally Memo. QFX/OFX (Quicken, bank
         downloads) is detected automatically — re-importing an overlapping QFX file skips any
-        transaction already present (matched by the bank's own transaction id). Imported rows
-        count toward this account's balance right away but land as <b>Pending</b> — uncategorized
+        transaction already present (matched by the bank&rsquo;s own transaction id). Imported rows
+        count toward this account&rsquo;s balance right away but land as <b>Pending</b> — uncategorized
         and unapproved until you open and save each one in the register.
       </p>
     </ModalShell>

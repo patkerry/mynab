@@ -58,15 +58,33 @@ export function TxnEditorRow({
   const { showToast } = useToast();
   const rowRef = useRef<HTMLDivElement>(null);
 
-  // Clicking anywhere outside the editor closes it back to a static row, same as Escape —
-  // it doesn't silently save a possibly-incomplete edit.
+  // Anything typed beyond what the editor opened with. Closing never silently saves — but it
+  // used to silently DISCARD too: one stray click while entering a transaction threw the whole
+  // thing away. Now a dirty editor asks first (both click-outside and Escape).
+  const dirty =
+    date !== initial.date ||
+    payee !== initial.payee ||
+    categoryId !== initial.categoryId ||
+    accountId !== (initial.accountId || accounts[0]?.id || "") ||
+    amount !== initial.amount ||
+    memo !== (initial.memo || "") ||
+    (isSplit && JSON.stringify(lines) !== JSON.stringify(initial.splits ?? [blankLine(), blankLine()]));
+  const requestClose = () => {
+    if (!dirty || window.confirm("Discard this transaction's unsaved changes?")) onClose();
+  };
+  // Latest-ref pattern: the mousedown listener is bound once but must see current dirty state.
+  const requestCloseRef = useRef(requestClose);
+  useEffect(() => {
+    requestCloseRef.current = requestClose;
+  });
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) onClose();
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) requestCloseRef.current();
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
+  }, []);
 
   const setLine = (i: number, patch: Partial<SplitLineDraft>) =>
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -128,14 +146,15 @@ export function TxnEditorRow({
   };
   const key = (e: KeyboardEvent) => {
     if (e.key === "Enter") submit();
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape") requestClose();
   };
 
   return (
     <div ref={rowRef} onKeyDown={key} className={`${styles.wrap} ${err ? styles.errored : ""}`}>
       <div className={styles.row} style={{ gridTemplateColumns: TXN_GRID }}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`num ${styles.input} ${styles.dateInput}`} />
+        <input type="date" aria-label="Date" value={date} onChange={(e) => setDate(e.target.value)} className={`num ${styles.input} ${styles.dateInput}`} />
         <input
+          aria-label="Payee"
           value={payee}
           onChange={(e) => setPayee(e.target.value)}
           placeholder={isTransfer ? "—" : isIncome ? "Payer" : "Payee"}
@@ -145,7 +164,7 @@ export function TxnEditorRow({
           style={{ opacity: isTransfer ? 0.5 : 1 }}
         />
         <div className={styles.catCell}>
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={styles.input}>
+          <select aria-label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={styles.input}>
             <option value="income">Inflow: Ready to Assign</option>
             <option value="">Uncategorized</option>
             <option value="split">Split across categories…</option>
@@ -177,8 +196,8 @@ export function TxnEditorRow({
             <SplitIcon size={14} strokeWidth={2.4} />
           </button>
         </div>
-        <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Memo" className={styles.input} />
-        <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={styles.input}>
+        <input aria-label="Memo" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Memo" className={styles.input} />
+        <select aria-label="Account" value={accountId} onChange={(e) => setAccountId(e.target.value)} className={styles.input}>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
@@ -186,6 +205,7 @@ export function TxnEditorRow({
           ))}
         </select>
         <input
+          aria-label="Amount"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="0.00"
@@ -196,7 +216,7 @@ export function TxnEditorRow({
           <button onClick={submit} disabled={busy || (isSplit && remainderCents !== 0)} title={`${saveLabel} (Enter)`} className={styles.saveBtn}>
             <Check size={15} strokeWidth={3} /> {saveLabel}
           </button>
-          <button onClick={onClose} title="Cancel (Esc)" className={`${styles.iconBtn} ${styles.cancel}`}>
+          <button onClick={requestClose} title="Cancel (Esc)" className={`${styles.iconBtn} ${styles.cancel}`}>
             <X size={17} />
           </button>
         </div>
@@ -206,7 +226,7 @@ export function TxnEditorRow({
         <div className={styles.splitBlock}>
           {lines.map((l, i) => (
             <div key={i} className={styles.splitLine}>
-              <select value={l.categoryId} onChange={(e) => setLine(i, { categoryId: e.target.value })} className={styles.input}>
+              <select aria-label={`Split line ${i + 1} category`} value={l.categoryId} onChange={(e) => setLine(i, { categoryId: e.target.value })} className={styles.input}>
                 <option value="">Pick a category…</option>
                 {allowRtaLine && <option value="income">Inflow: Ready to Assign</option>}
                 <optgroup label="Category">
@@ -217,8 +237,9 @@ export function TxnEditorRow({
                   ))}
                 </optgroup>
               </select>
-              <input value={l.memo || ""} onChange={(e) => setLine(i, { memo: e.target.value })} placeholder="Memo" className={styles.input} />
+              <input aria-label={`Split line ${i + 1} memo`} value={l.memo || ""} onChange={(e) => setLine(i, { memo: e.target.value })} placeholder="Memo" className={styles.input} />
               <input
+                aria-label={`Split line ${i + 1} amount`}
                 value={l.amount}
                 onChange={(e) => setLine(i, { amount: e.target.value })}
                 placeholder="0.00"

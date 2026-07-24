@@ -1,21 +1,11 @@
-import { getBudgetPageData } from "@/lib/queries";
+import { getBudgetPageModel } from "@/lib/queries";
 import { curYM } from "@/lib/format";
 import { BudgetView } from "@/components/BudgetView";
 
 export default async function BudgetPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const params = await searchParams;
   const month = params.month || curYM();
-  const { groups, categories, accounts, transactions, budgetEntries, splits } = await getBudgetPageData();
+  const { groups, categories, model } = await getBudgetPageModel(month);
 
-  return (
-    <BudgetView
-      month={month}
-      groups={groups}
-      categories={categories}
-      accounts={accounts}
-      transactions={transactions}
-      budgetEntries={budgetEntries}
-      splits={splits}
-    />
-  );
+  return <BudgetView month={month} groups={groups} categories={categories} model={model} />;
 }

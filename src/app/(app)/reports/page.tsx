@@ -23,7 +23,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { range: rangeParam } = await searchParams;
   const range: ReportRange = (RANGES.some((r) => r.key === rangeParam) ? rangeParam : "6m") as ReportRange;
   const months = monthsForRange(range, curYM());
-  const { transactions, categories, budgetEntries, accounts, splits } = await getReportsData();
+  const { transactions, categories, budgetEntries, accounts, splits, baselineCents } = await getReportsData(`${months[0]}-01`);
 
   // Off-budget (Investment/Loan) accounts belong in net worth but not in spending/income — feed the
   // budget-facing reports only on-budget transactions; net worth sees everything. Split parents fan
@@ -41,7 +41,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       summary={summary(onBudgetTxns, months)}
       spendByCat={spendByCategory(onBudgetTxns, categories, months)}
       incomeExpense={incomeVsSpending(onBudgetTxns, months)}
-      netWorth={netWorthTrend(transactions, months)}
+      netWorth={netWorthTrend(transactions, months, baselineCents)}
       catTrend={categorySpendTrend(onBudgetTxns, categories, months)}
       merchants={topMerchants(onBudgetTxns, months)}
       budgetVsActual={budgetVsActual(onBudgetTxns, categories, budgetEntries, months)}

@@ -1,8 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { suspendUser, reactivateUser, deleteUser } from "./actions";
+import { useRunAction } from "@/components/useRunAction";
 import styles from "./AdminUserActions.module.css";
 
 // Row actions for the admin users table. Client component so destructive actions get a confirm and
@@ -19,7 +19,7 @@ export function AdminUserActions({
   isSelf: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
+  const run = useRunAction();
 
   if (isSelf) return <span className={styles.you}>(you)</span>;
 
@@ -28,7 +28,7 @@ export function AdminUserActions({
       {suspended ? (
         <button
           disabled={pending}
-          onClick={() => startTransition(async () => { await reactivateUser(userId); router.refresh(); })}
+          onClick={() => startTransition(async () => { await run(() => reactivateUser(userId)); })}
           className={`${styles.btn} ${styles.reactivate}`}
         >
           Reactivate
@@ -36,7 +36,7 @@ export function AdminUserActions({
       ) : (
         <button
           disabled={pending}
-          onClick={() => startTransition(async () => { await suspendUser(userId); router.refresh(); })}
+          onClick={() => startTransition(async () => { await run(() => suspendUser(userId)); })}
           className={`${styles.btn} ${styles.suspend}`}
         >
           Suspend
@@ -46,7 +46,7 @@ export function AdminUserActions({
         disabled={pending}
         onClick={() => {
           if (confirm(`Permanently delete ${email} and the budgets they solely own? This cannot be undone.`)) {
-            startTransition(async () => { await deleteUser(userId); router.refresh(); });
+            startTransition(async () => { await run(() => deleteUser(userId)); });
           }
         }}
         className={`${styles.btn} ${styles.delete}`}

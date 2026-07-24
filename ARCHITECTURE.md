@@ -211,6 +211,21 @@ row is written every time, including a clean reconciliation with no adjustment. 
 `toggleCleared` action was removed as dead code — the cleared toggle was dropped from the UI long
 before, and nothing imported it; clearing happens only via approve/save.)
 
+## Where the engine runs (performance seams)
+
+The engine is deliberately a pure function over ALL-TIME rows — fine in itself, but that design
+must not leak into per-request costs. Three seams enforce that (2026-07 audit remediation):
+- **`/budget`**: `getBudgetPageModel` (queries.ts) fetches the history and runs `computeDerived`
+  SERVER-side, shipping only per-category numbers (`CatMonth`) + resolved breakdowns. BudgetView/
+  CatRow never see raw transactions — don't reintroduce a client-side `computeDerived`.
+- **Sidebar** (`getSidebarData`, every navigation): SQL `groupBy`/`aggregate` only — never a
+  findMany that materializes transaction rows.
+- **Overspend coverage** (`applyOverspendCoverageBatch`, accounts/actions.ts): ONE budget
+  snapshot per action, sequential drain-RTA semantics preserved in memory. Never call the
+  single-item wrapper in a loop.
+- **`/reports`**: row fetch is window-bounded; `netWorthTrend` takes a SQL-summed pre-window
+  `baselineCents` for its cumulative math.
+
 ## Sidebar & register chrome (`Sidebar.tsx`, `AccountsView.tsx`)
 
 - **Ready-to-Assign is computed in `getSidebarData` (`src/lib/queries.ts`), NOT via

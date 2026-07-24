@@ -10,6 +10,7 @@ import { deleteTransaction, addTransaction, updateTransaction, approvePending, g
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
+import { useRunAction } from "./useRunAction";
 import type { Account, Category, Reconciliation } from "@/generated/prisma-postgres/client";
 import type { TransactionWithSplits, TxnDraft } from "@/lib/types";
 import styles from "./AccountsView.module.css";
@@ -51,6 +52,7 @@ export function AccountsView({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const { openModal } = useModal();
   const { showToast } = useToast();
+  const run = useRunAction();
 
   // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess) —
   // or split lines that sum exactly to the row's total (an incoherent split must be re-edited,
@@ -68,16 +70,16 @@ export function AccountsView({
   const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(approvableIds));
   const approveSelected = async () => {
     const ids = [...selected];
-    const { approved } = await approvePending(ids);
+    const result = await run(() => approvePending(ids));
+    if (!result) return;
     setSelected(new Set());
-    showToast(approved > 0 ? `Approved ${approved} transaction${approved > 1 ? "s" : ""}` : "Nothing to approve", approved > 0 ? "success" : "error");
-    router.refresh();
+    showToast(result.approved > 0 ? `Approved ${result.approved} transaction${result.approved > 1 ? "s" : ""}` : "Nothing to approve", result.approved > 0 ? "success" : "error");
   };
   // One-click approve for a single pending row (accepts its guessed category).
   const approveRow = async (id: string) => {
-    const { approved } = await approvePending([id]);
-    showToast(approved > 0 ? "Approved 1 transaction" : "Nothing to approve", approved > 0 ? "success" : "error");
-    router.refresh();
+    const result = await run(() => approvePending([id]));
+    if (!result) return;
+    showToast(result.approved > 0 ? "Approved 1 transaction" : "Nothing to approve", result.approved > 0 ? "success" : "error");
   };
 
   // Undo the most recent import — removes the un-reviewed rows it added (see undoImport).
@@ -85,9 +87,9 @@ export function AccountsView({
     if (!lastImportBatch) return;
     const n = lastImportBatch.count;
     if (!window.confirm(`Undo the last import? This permanently removes the ${n} un-reviewed transaction${n === 1 ? "" : "s"} it added.`)) return;
-    const { removed } = await undoImport(lastImportBatch.id);
-    showToast(removed > 0 ? `Removed ${removed} imported transaction${removed === 1 ? "" : "s"}` : "Nothing to undo", removed > 0 ? "success" : "error");
-    router.refresh();
+    const result = await run(() => undoImport(lastImportBatch.id));
+    if (!result) return;
+    showToast(result.removed > 0 ? `Removed ${result.removed} imported transaction${result.removed === 1 ? "" : "s"}` : "Nothing to undo", result.removed > 0 ? "success" : "error");
   };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
@@ -134,7 +136,8 @@ export function AccountsView({
   const handleReconcile = async () => {
     const account = accounts.find((a) => a.id === accountFilter);
     if (!account) return;
-    const info = await getReconcileInfo(accountFilter);
+    const info = await run(() => getReconcileInfo(accountFilter), { refresh: false });
+    if (!info) return;
     if (!info.ok) {
       showToast(info.reason);
       return;
@@ -314,6 +317,16 @@ export function AccountsView({
             <Fragment key={t.id}>
             <div
               className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
+              role={transfer ? undefined : "button"}
+              tabIndex={transfer ? undefined : 0}
+              onKeyDown={(e) => {
+                // Keyboard users could not open the editor at all — rows are divs, not buttons.
+                if (!transfer && (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                  e.preventDefault();
+                  setEditingId(t.id);
+                  setAdding(false);
+                }
+              }}
               onClick={() => {
                 if (!transfer) {
                   setEditingId(t.id);
@@ -373,8 +386,7 @@ export function AccountsView({
                     // undo-import asked first — backwards. Same confirm treatment now.
                     const what = transfer ? "this transfer (both legs)" : `"${t.payee || catName(t)}" (${fmt(t.amountCents)})`;
                     if (!window.confirm(`Delete ${what}?`)) return;
-                    await deleteTransaction(t.id);
-                    router.refresh();
+                    await run(() => deleteTransaction(t.id));
                   }}
                   className={styles.iconBtn}
                 >
@@ -391,6 +403,15 @@ export function AccountsView({
                 key={s.id}
                 className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
                 style={{ gridTemplateColumns: TXN_GRID, cursor: "pointer" }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                    e.preventDefault();
+                    setEditingId(t.id);
+                    setAdding(false);
+                  }
+                }}
                 onClick={() => {
                   setEditingId(t.id);
                   setAdding(false);

@@ -1,42 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Target, Eye, EyeOff, Pencil, GripVertical } from "lucide-react";
-import { fmt, parseMoney, addMonths } from "@/lib/format";
-import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
+import { fmt, parseMoney } from "@/lib/format";
+import { goalProgress, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
 import { useModal } from "./modal/ModalContext";
+import { useRunAction } from "./useRunAction";
 import type { Category } from "@/generated/prisma-postgres/client";
+import type { CatMonth } from "@/lib/types";
 import styles from "./CatRow.module.css";
 
 export function CatRow({
   c,
   month,
-  derived,
+  data,
   breakdown,
   onDragStart,
   onDrop,
 }: {
   c: Category;
   month: string;
-  derived: Derived;
+  // Plain server-computed numbers (see getBudgetPageModel) — no engine on the client.
+  data: CatMonth;
   breakdown?: CatBreakdown;
   onDragStart?: () => void;
   onDrop?: () => void;
 }) {
   const draggable = !!onDragStart;
   const { openModal } = useModal();
-  const router = useRouter();
-  const assigned = derived.assignedIn(c.id, month);
-  const activity = derived.activityIn(c.id, month);
-  const avail = derived.available(c.id, month);
-  const [draft, setDraft] = useState((assigned / 100).toFixed(2));
-
-  useEffect(() => {
+  const run = useRunAction();
+  const { assigned, activity, avail, lastAssigned } = data;
+  const [draft, setDraft] = useState(assigned ? (assigned / 100).toFixed(2) : "");
+  // Re-sync the input when the underlying assignment (or the viewed month) changes — the
+  // "adjust state during render" pattern, not an effect: no extra render cascade, and an
+  // in-progress keystroke can't be clobbered by an unrelated refresh mid-type.
+  const [synced, setSynced] = useState({ assigned, month });
+  if (synced.assigned !== assigned || synced.month !== month) {
+    setSynced({ assigned, month });
     setDraft(assigned ? (assigned / 100).toFixed(2) : "");
-  }, [assigned, month]);
+  }
 
   const goalInfo = goalProgress(c, assigned, avail);
   const goalLabel = goalInfo
@@ -58,18 +62,15 @@ export function CatRow({
         : { color: "var(--posInk)", background: "var(--posSoft)" };
 
   const commit = async () => {
-    await setAssigned(c.id, month, parseMoney(draft));
-    router.refresh();
+    await run(() => setAssigned(c.id, month, parseMoney(draft)));
   };
 
   // "Last month" reference: what was assigned to this category the previous month. Clicking it
   // copies that amount into this month's assignment (per-row "carry forward"). Reuses setAssigned.
-  const lastAssigned = derived.assignedIn(c.id, addMonths(month, -1));
   const fillFromLastMonth = async () => {
     if (lastAssigned <= 0) return;
     setDraft((lastAssigned / 100).toFixed(2));
-    await setAssigned(c.id, month, lastAssigned);
-    router.refresh();
+    await run(() => setAssigned(c.id, month, lastAssigned));
   };
 
   return (
@@ -119,10 +120,7 @@ export function CatRow({
           {!c.linkedAccountId && (
             <>
               <button
-                onClick={async () => {
-                  await setCategoryHidden(c.id, !c.isHidden);
-                  router.refresh();
-                }}
+                onClick={() => run(() => setCategoryHidden(c.id, !c.isHidden))}
                 title={c.isHidden ? "Unhide category" : "Hide category"}
                 className={styles.iconBtn}
               >
@@ -173,6 +171,7 @@ export function CatRow({
       </div>
       <div className={styles.cellRight}>
         <input
+          aria-label={`Assigned to ${c.name}`}
           className="assign-in num"
           value={draft}
           placeholder="0.00"
