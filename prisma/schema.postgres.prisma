@@ -179,7 +179,7 @@ model BudgetEntry {
   budgetId    String
   budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   yearMonth   String // "YYYY-MM"
   amountCents Int
   createdAt   DateTime @default(now())
