@@ -15,6 +15,13 @@ few expensive lessons — read it before making changes, especially to `src/lib/
   dev server**. Turbopack does not reliably pick up a regenerated Prisma client — you'll see
   confusing "Unknown argument" or stale-type errors from a server that's still running on the old
   client, even though the code and DB are both correct. This bit us multiple times this session.
+- **⚠️ Mutations from client `onClick` need `router.refresh()`**: in this Next 16 build, calling a
+  Server Action directly from a client event handler does **not** auto-refresh the client from the
+  action's `revalidatePath` — the DB updates but the UI stays stale until a reload (e.g. an approved
+  row keeping its "NEEDS REVIEW" pill, or Ready-to-Assign not moving after you assign). So **every
+  client-invoked mutation must call `router.refresh()` after the action** (see AccountsView / CatRow /
+  BudgetView / CategoriesView). Modals are covered centrally: `ModalProvider`'s `close()` refreshes,
+  so any modal reflects on close. Actions that navigate (`router.push`) already refresh as a side effect.
 
 ## The dual-schema split (Postgres web + SQLite desktop)
 
