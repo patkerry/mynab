@@ -13,10 +13,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Auth.js there would need AUTH_SECRET — so resolve it only on web, via dynamic import.
   const isDesktop = process.env.DB_PROVIDER === "sqlite";
   let isAdmin = false;
+  let userName: string | null = null;
   if (!isDesktop) {
     const { auth } = await import("@/auth");
     const session = await auth();
     isAdmin = session?.user?.isAdmin ?? false;
+    // Prefer the OAuth display name (Google supplies it); fall back to email if a provider omits it.
+    userName = session?.user?.name ?? session?.user?.email ?? null;
   }
 
   // "Reset demo data" wipes the budget and reseeds sample data — useful for demos/dev, but a scary,
@@ -26,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="ynab-root">
       <Suspense fallback={null}>
-        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} readyToAssign={readyToAssign} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
+        <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} readyToAssign={readyToAssign} userName={userName} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
       </Suspense>
       <main className={styles.main}>{children}</main>
     </div>

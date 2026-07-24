@@ -14,6 +14,7 @@ export function Sidebar({
   acctBalance,
   netWorth,
   readyToAssign,
+  userName = null,
   isAdmin = false,
   showAuth = false,
   showDemoReset = false,
@@ -22,6 +23,7 @@ export function Sidebar({
   acctBalance: Record<string, number>;
   netWorth: number;
   readyToAssign: number;
+  userName?: string | null;
   isAdmin?: boolean;
   showAuth?: boolean;
   showDemoReset?: boolean;
@@ -129,11 +131,18 @@ export function Sidebar({
       )}
 
       {showAuth && (
-        <form action={signOutAction}>
-          <button type="submit" className={`btn btn-ghost ${styles.fullBtn}`}>
-            <LogOut size={14} /> Sign out
-          </button>
-        </form>
+        <div className={styles.userBox}>
+          {userName && (
+            <div className={styles.user} title={userName}>
+              <span className={styles.userName}>{userName}</span>
+            </div>
+          )}
+          <form action={signOutAction}>
+            <button type="submit" className={`btn btn-ghost ${styles.fullBtn}`}>
+              <LogOut size={14} /> Sign out
+            </button>
+          </form>
+        </div>
       )}
     </aside>
   );
