@@ -81,6 +81,7 @@ gitignored `.pgdata/`); any other Postgres works too.
 | `npm run dev:sqlite` | Dev server against a local SQLite file (desktop-style, no auth). |
 | `npm run build` | Generate Prisma clients + production build. |
 | `npm test` | Schema-parity check + Vitest unit tests. |
+| `npm run test:e2e` | Playwright browser tests (own server on :3100, own SQLite DB — safe alongside `npm run dev`). |
 | `npm run admin:set <email>` | Grant global admin (`--revoke` to remove). |
 | `node scripts/dev-postgres.mjs` | Run a local embedded Postgres (no system install needed). |
 | `npx tsx --env-file=.env scripts/reset-demo.ts` | Wipe + reseed every budget with demo data. |
@@ -103,8 +104,10 @@ npm test
 ```
 
 Runs the schema-parity check and the Vitest unit suite (budgeting engine, CSV/QFX parsing, merchant
-guessing, reports, auth allowlist). Note: there are **no DB/integration tests** — the query layer
-and Server Actions are exercised by hand. See the coverage-status note in `ARCHITECTURE.md`.
+guessing, reports, auth allowlist). `npm run test:e2e` runs the Playwright browser suite through the
+full stack (register, splits, import→approve, reconcile) against a dedicated SQLite database — no
+Postgres or auth setup needed. See the coverage-status note in `ARCHITECTURE.md` for what's still
+uncovered (Postgres-specific query behavior).
 
 ## Deployment
 

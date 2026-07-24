@@ -60,3 +60,11 @@ next-env.d.ts
 /.pgdata
 /.env.web.local
 /.env.desktop.bak
+
+# e2e (Playwright): test database + artifacts
+/prisma/e2e.db*
+/test-results
+/playwright-report
+
+# e2e next build dir
+/.next-e2e

@@ -295,10 +295,22 @@ they served the original data migration and are gone. Docs or memories referenci
   `qfx.test.ts`), merchant extraction / category guessing (`merchant.test.ts`), reports incl. the
   split fan-out (`reports.test.ts`), the sign-in allowlist (`auth-allowlist.test.ts`), and schema
   parity (`check-schema-parity.ts`).
+- **E2E (Playwright, `npm run test:e2e`)**: browser → Server Actions → Prisma → SQLite → engine →
+  RSC re-render, against a real dev server. Runs on the **sqlite provider** (no OAuth needed, and
+  it exercises the otherwise under-tested desktop DB path — it caught Prisma's Postgres-only
+  `mode: "insensitive"` crashing manual adds on SQLite the very first run). Own port (3100), own
+  DB (`prisma/e2e.db`, migrated from `migrations-sqlite/` + demo-seeded, reset per test), own
+  build dir (`.next-e2e`) so `npm run dev` can stay running. Serial workers — specs share one
+  seeded budget. Covers: the sidebar-vs-banner RTA cross-check (the duplicated formula), add
+  outflow, split create/display with the exact-sum gate, import→pending→approve, transfer-to-card
+  RTA invariance, reconcile adjustment, and the dirty-editor discard guard. Specs must scope
+  modal selectors to `.modal` and never import the generated Prisma client (Playwright's loader
+  can't parse it — DB resets go through `npx tsx e2e/reset-cli.ts`).
 - **What's NOT tested — know this before assessing:**
-  - **No DB/integration tests.** Everything in `src/lib/queries.ts` and the Server Actions
-    (`accounts/actions.ts`, etc.) runs live Prisma — there is no test harness that stands up a DB,
-    so those paths are exercised only by hand.
+  - **No Postgres integration tests.** `src/lib/queries.ts` and the Server Actions are now
+    exercised end-to-end on SQLite via Playwright, but never against Postgres-specific behavior
+    (groupBy/aggregate paths run in production only). Provider-divergence bugs on the Postgres
+    side would not be caught.
   - Most **1.0 sidebar/register additions ship untested**: Ready-to-Assign in `getSidebarData` and
     the user-name display have no tests (both are thin server-side reads).
   - The **"Uncleared = uncleared + pending, over disjoint sets" invariant IS locked** — the state

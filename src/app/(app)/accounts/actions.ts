@@ -118,9 +118,15 @@ export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDu
   const d = interpretDraft(draft);
   if (d.kind === "invalid" || d.kind === "transfer") return null;
 
-  const existing = await prisma.transaction.findFirst({
-    where: { budgetId, accountId: draft.accountId, date: draft.date, payee: { equals: d.payee, mode: "insensitive" }, amountCents: d.cents, deletedAt: null },
+  // Case-insensitive payee match done in JS: Prisma's `mode: "insensitive"` is Postgres-only and
+  // THROWS on SQLite (the desktop build) — the e2e suite caught manual adds crashing there. Same
+  // provider-portability class as the createMany({ skipDuplicates }) lesson in ARCHITECTURE.md.
+  // The candidate set (same account+date+amount) is tiny, so filtering in JS costs nothing.
+  const candidates = await prisma.transaction.findMany({
+    where: { budgetId, accountId: draft.accountId, date: draft.date, amountCents: d.cents, deletedAt: null },
+    select: { date: true, payee: true, amountCents: true },
   });
+  const existing = candidates.find((t) => t.payee.toLowerCase() === d.payee.toLowerCase());
   return existing ? { date: existing.date, payee: existing.payee, amountCents: existing.amountCents } : null;
 }
 

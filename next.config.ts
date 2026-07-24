@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   // server-deployment path this app also needs to keep working.
   output: process.env.ELECTRON_BUILD === "1" ? "standalone" : undefined,
 
+  // Overridable build dir so the Playwright e2e server (its own port + SQLite DB — see
+  // playwright.config.ts) can run CONCURRENTLY with a normal `npm run dev`: Next refuses two
+  // servers sharing one .next. Unset everywhere else, so nothing changes for dev/build/deploy.
+  distDir: process.env.NEXT_DIST_DIR || undefined,
+
   // The CSV/QFX import sends the whole file's text through a Server Action (see importTransactions
   // in src/app/accounts/actions.ts). Server Actions cap the request body at 1MB by default, which a
   // real bank export can exceed — raise it so larger statements import instead of failing.
