@@ -193,7 +193,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
 
   // The edited row and its new account must both belong to the active budget.
   const [owned, acct] = await Promise.all([
-    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true } }),
+    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true } }),
     prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } }),
   ]);
   if (!owned || !acct) return false;
@@ -258,6 +258,9 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
         // Saving an edit is how a file-imported (pending) row gets reviewed — this save IS
         // the approval. A no-op for already-approved transactions.
         pending: false,
+        // Approving a pending (imported, already-posted) row also clears it — one step, not two.
+        // undefined leaves cleared untouched when merely editing an already-approved row.
+        cleared: owned.pending ? true : undefined,
       },
     });
   } else {
@@ -281,6 +284,9 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           amountCents: -cents,
           payee: draft.payee.trim() || "Payee",
           pending: false,
+          // Approving a pending (imported, already-posted) row also clears it — one step, not two.
+          // undefined leaves cleared untouched when merely editing an already-approved row.
+          cleared: owned.pending ? true : undefined,
         },
       });
       await applyOverspendCoverage(tx, budgetId, draft.accountId, categoryId, draft.date);
@@ -303,7 +309,9 @@ export async function approvePending(ids: string[]): Promise<{ approved: number 
   if (rows.length === 0) return { approved: 0 };
   await prisma.$transaction(async (tx) => {
     for (const r of rows) {
-      await tx.transaction.update({ where: { id: r.id }, data: { pending: false } });
+      // Approving also clears: a pending row is always an imported (already-posted) transaction, so
+      // approving it confirms it against the bank in the same step — no separate clear click.
+      await tx.transaction.update({ where: { id: r.id }, data: { pending: false, cleared: true } });
       await applyOverspendCoverage(tx, budgetId, r.accountId, r.categoryId, r.date);
     }
   });
