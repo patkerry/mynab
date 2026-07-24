@@ -16,6 +16,28 @@ few expensive lessons — read it before making changes, especially to `src/lib/
   confusing "Unknown argument" or stale-type errors from a server that's still running on the old
   client, even though the code and DB are both correct. This bit us multiple times this session.
 
+## The dual-schema split (Postgres web + SQLite desktop)
+
+There are **two** Prisma schemas that must define identical models:
+- `prisma/schema.postgres.prisma` → generates `src/generated/prisma-postgres` (web/server build).
+- `prisma/schema.sqlite.prisma` → generates `src/generated/prisma-sqlite` (Electron desktop build).
+
+`src/lib/db.ts` picks the client at runtime from `DB_PROVIDER` and **casts the SQLite client to the
+Postgres client's type** so the rest of the app is provider-agnostic. That cast is only sound while
+the two schemas are shape-identical — which `scripts/check-schema-parity.ts` enforces in `npm test`.
+
+**When you change the schema, edit BOTH files** (everything from `enum AccountType` onward must stay
+byte-for-byte identical — only the generator `output` path and datasource `provider` in the header
+differ) and add a migration under **both** `prisma/migrations-postgres/` and
+`prisma/migrations-sqlite/`. `prisma.config.ts` prefers `MIGRATE_DATABASE_URL`.
+
+What the parity check does and does **not** guarantee is documented in detail at the top of
+`scripts/check-schema-parity.ts`. In short: it proves the model text is identical (so it catches
+type/default/index/relation drift), but it is a text check — it does **not** prove runtime parity
+across the two engines. Features that differ by engine are your responsibility to keep portable; the
+one that has bitten us is `createMany({ skipDuplicates })` (Postgres-only), which the import pipeline
+(`src/lib/import.ts`) works around by pre-filtering duplicates in application code.
+
 ## The engine: `src/lib/budget.ts`
 
 Everything renders from `computeDerived(inputs, month) -> Derived`, a pure function over
