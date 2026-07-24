@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireBudget } from "@/lib/budget-context";
 import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
 import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
+import { validateSplitDraft, splitsSumToParent, type ParsedSplitLine } from "@/lib/splits";
 import { runImport } from "@/lib/import";
 import type { Prisma, AccountType } from "@/generated/prisma-postgres/client";
 import type { TxnDraft, ImportResult } from "@/lib/types";
@@ -36,14 +37,15 @@ async function applyOverspendCoverage(tx: Prisma.TransactionClient, budgetId: st
   const account = await tx.account.findFirst({ where: { id: accountId, budgetId } });
   if (account?.type !== "CREDIT") return;
 
-  const [accounts, categories, transactions, budgetEntries] = await Promise.all([
+  const [accounts, categories, transactions, budgetEntries, splits] = await Promise.all([
     tx.account.findMany({ where: { budgetId } }),
     tx.category.findMany({ where: { budgetId } }),
     tx.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     tx.budgetEntry.findMany({ where: { budgetId } }),
+    tx.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
   const month = monthKeyOf(date);
-  const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries }, categoryId, month);
+  const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries, splits }, categoryId, month);
   if (coverage <= 0) return;
 
   await tx.budgetEntry.upsert({
@@ -51,6 +53,32 @@ async function applyOverspendCoverage(tx: Prisma.TransactionClient, budgetId: st
     update: { amountCents: { increment: coverage } },
     create: { budgetId, categoryId, yearMonth: month, amountCents: coverage },
   });
+}
+
+// Server-side half of split validation: resolve the draft's account type and the budget's
+// category sets, then defer every rule to the pure validateSplitDraft (src/lib/splits.ts) —
+// the SAME function the editor runs client-side, so the server can't accept what the UI would
+// reject (or vice versa). Category ids are fetched budget-scoped, which doubles as the guard
+// against probing another budget's categories by id. Distinct non-null line categories are
+// what the overspend-coverage loops iterate.
+async function resolveSplitValidation(
+  budgetId: string,
+  draft: TxnDraft
+): Promise<{ ok: true; lines: ParsedSplitLine[]; totalCents: number; lineCategoryIds: string[] } | { ok: false }> {
+  const account = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { type: true } });
+  if (!account) return { ok: false };
+  const cats = await prisma.category.findMany({ where: { budgetId }, select: { id: true, linkedAccountId: true } });
+  const v = validateSplitDraft({
+    lines: draft.splits ?? [],
+    direction: draft.splitDirection ?? "outflow",
+    parentAmount: draft.amount,
+    accountType: account.type,
+    paymentCategoryIds: new Set(cats.filter((c) => c.linkedAccountId != null).map((c) => c.id)),
+    validCategoryIds: new Set(cats.filter((c) => c.linkedAccountId == null).map((c) => c.id)),
+  });
+  if (!v.ok) return { ok: false };
+  const lineCategoryIds = [...new Set(v.lines.map((l) => l.categoryId).filter((c): c is string => c !== null))];
+  return { ok: true, lines: v.lines, totalCents: v.totalCents, lineCategoryIds };
 }
 
 export type PossibleDuplicate = { date: string; payee: string; amountCents: number };
@@ -66,7 +94,9 @@ export async function findPossibleDuplicate(draft: TxnDraft): Promise<PossibleDu
   const cents = parseMoney(draft.amount);
   if (!cents || !draft.accountId) return null;
   const isIncome = draft.categoryId === "income";
-  const amountCents = isIncome ? cents : -cents;
+  // A split parent's sign comes from its direction toggle, not from being income/spending.
+  const inflow = isIncome || (draft.categoryId === "split" && draft.splitDirection === "inflow");
+  const amountCents = inflow ? cents : -cents;
   const payee = draft.payee.trim() || (isIncome ? "Income" : "Payee");
 
   const existing = await prisma.transaction.findFirst({
@@ -150,6 +180,35 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
         memo,
       },
     });
+  } else if (draft.categoryId === "split") {
+    // Split: parent stays NORMAL with categoryId null; the lines (which must sum exactly to the
+    // parent amount — validateSplitDraft enforces it) carry the category/RTA allocations. Checked
+    // BEFORE the plain-NORMAL fallback so the "split" sentinel can never persist as a category id.
+    const v = await resolveSplitValidation(budgetId, draft);
+    if (!v.ok) return false;
+    await prisma.$transaction(async (tx) => {
+      const parent = await tx.transaction.create({
+        data: {
+          budgetId,
+          accountId: draft.accountId,
+          date: draft.date,
+          payee: draft.payee.trim() || "Payee",
+          kind: "NORMAL",
+          categoryId: null,
+          amountCents: v.totalCents,
+          cleared: true,
+          memo,
+        },
+      });
+      // No skipDuplicates: SQLite doesn't support it (see the import pipeline's workaround).
+      await tx.transactionSplit.createMany({
+        data: v.lines.map((l) => ({ budgetId, transactionId: parent.id, categoryId: l.categoryId, amountCents: l.amountCents, memo: l.memo })),
+      });
+      // Same per-category coverage a single-category card purchase gets, once per line category.
+      for (const catId of v.lineCategoryIds) {
+        await applyOverspendCoverage(tx, budgetId, draft.accountId, catId, draft.date);
+      }
+    });
   } else {
     const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
     if (!acct) return false;
@@ -212,6 +271,9 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     if (!toAcct) return false;
     const transferId = uid("xfer");
     await prisma.$transaction([
+      // Converting a (possibly split) row into a transfer discards its split lines — a transfer
+      // is never split. Same cleanup in every non-split branch below.
+      prisma.transactionSplit.deleteMany({ where: { transactionId: id } }),
       prisma.transaction.update({
         where: { id },
         data: {
@@ -245,23 +307,54 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       }),
     ]);
   } else if (draft.categoryId === "income") {
-    await prisma.transaction.update({
-      where: { id },
-      data: {
-        date: draft.date,
-        accountId: draft.accountId,
-        memo,
-        kind: "INCOME",
-        categoryId: null,
-        amountCents: cents,
-        payee: draft.payee.trim() || "Income",
-        // Saving an edit is how a file-imported (pending) row gets reviewed — this save IS
-        // the approval. A no-op for already-approved transactions.
-        pending: false,
-        // Approving a pending (imported, already-posted) row also clears it — one step, not two.
-        // undefined leaves cleared untouched when merely editing an already-approved row.
-        cleared: owned.pending ? true : undefined,
-      },
+    await prisma.$transaction([
+      prisma.transactionSplit.deleteMany({ where: { transactionId: id } }),
+      prisma.transaction.update({
+        where: { id },
+        data: {
+          date: draft.date,
+          accountId: draft.accountId,
+          memo,
+          kind: "INCOME",
+          categoryId: null,
+          amountCents: cents,
+          payee: draft.payee.trim() || "Income",
+          // Saving an edit is how a file-imported (pending) row gets reviewed — this save IS
+          // the approval. A no-op for already-approved transactions.
+          pending: false,
+          // Approving a pending (imported, already-posted) row also clears it — one step, not two.
+          // undefined leaves cleared untouched when merely editing an already-approved row.
+          cleared: owned.pending ? true : undefined,
+        },
+      }),
+    ]);
+  } else if (draft.categoryId === "split") {
+    // Split save: replace the parent's shape and its whole line set atomically. Approval-on-save
+    // semantics match the plain NORMAL branch (a pending imported row can be split during review).
+    const v = await resolveSplitValidation(budgetId, draft);
+    if (!v.ok) return false;
+    await prisma.$transaction(async (tx) => {
+      await tx.transaction.update({
+        where: { id },
+        data: {
+          date: draft.date,
+          accountId: draft.accountId,
+          memo,
+          kind: "NORMAL",
+          categoryId: null,
+          amountCents: v.totalCents,
+          payee: draft.payee.trim() || "Payee",
+          pending: false,
+          cleared: owned.pending ? true : undefined,
+        },
+      });
+      await tx.transactionSplit.deleteMany({ where: { transactionId: id } });
+      await tx.transactionSplit.createMany({
+        data: v.lines.map((l) => ({ budgetId, transactionId: id, categoryId: l.categoryId, amountCents: l.amountCents, memo: l.memo })),
+      });
+      for (const catId of v.lineCategoryIds) {
+        await applyOverspendCoverage(tx, budgetId, draft.accountId, catId, draft.date);
+      }
     });
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
@@ -273,6 +366,8 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     // uncleared->cleared gate enforces in toggleCleared.
     if (categoryId === null) return false;
     await prisma.$transaction(async (tx) => {
+      // Converting a split row back to a single category discards its lines.
+      await tx.transactionSplit.deleteMany({ where: { transactionId: id } });
       await tx.transaction.update({
         where: { id },
         data: {
@@ -302,17 +397,30 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
 export async function approvePending(ids: string[]): Promise<{ approved: number }> {
   const { budgetId } = await requireBudget("write");
   if (ids.length === 0) return { approved: 0 };
-  const rows = await prisma.transaction.findMany({
-    where: { id: { in: ids }, budgetId, pending: true, categoryId: { not: null } },
-    select: { id: true, accountId: true, categoryId: true, date: true },
+  const fetched = await prisma.transaction.findMany({
+    // "Has a category" now means either a direct categoryId or split lines — a split row IS
+    // categorized (it has several), so it's bulk-approvable like any other categorized row.
+    where: { id: { in: ids }, budgetId, pending: true, OR: [{ categoryId: { not: null } }, { splits: { some: {} } }] },
+    select: { id: true, accountId: true, categoryId: true, date: true, amountCents: true, splits: { select: { categoryId: true, amountCents: true } } },
   });
+  // Never approve an incoherent split: if its lines don't sum to the parent amount, approving
+  // would move money into categories that never actually left the account. Every write path
+  // enforces the sum, so this only skips rows some out-of-band edit corrupted — same silent-skip
+  // treatment as an uncategorized row (the register's approvable predicate hides both anyway).
+  const rows = fetched.filter((r) => r.splits.length === 0 || splitsSumToParent(r.amountCents, r.splits));
   if (rows.length === 0) return { approved: 0 };
   await prisma.$transaction(async (tx) => {
     for (const r of rows) {
       // Approving also clears: a pending row is always an imported (already-posted) transaction, so
       // approving it confirms it against the bank in the same step — no separate clear click.
       await tx.transaction.update({ where: { id: r.id }, data: { pending: false, cleared: true } });
-      await applyOverspendCoverage(tx, budgetId, r.accountId, r.categoryId, r.date);
+      // Coverage per affected category: the row's own, or each distinct categorized split line.
+      const catIds = r.categoryId
+        ? [r.categoryId]
+        : [...new Set(r.splits.map((s) => s.categoryId).filter((c): c is string => c !== null))];
+      for (const catId of catIds) {
+        await applyOverspendCoverage(tx, budgetId, r.accountId, catId, r.date);
+      }
     }
   });
   revalidateAll();
@@ -328,15 +436,20 @@ export type ToggleClearedResult = { ok: true } | { ok: false; reason: string };
 // intentionally always categoryId: null and are unaffected (kind !== "NORMAL" short-circuits).
 export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
   const { budgetId } = await requireBudget("write");
-  const t = await prisma.transaction.findFirst({ where: { id, budgetId } });
+  const t = await prisma.transaction.findFirst({ where: { id, budgetId }, include: { splits: { select: { amountCents: true } } } });
   if (!t) return { ok: false, reason: "Transaction not found." };
 
   const willClear = !t.cleared;
   if (willClear && t.pending) {
     return { ok: false, reason: "Approve this imported transaction before marking it cleared." };
   }
-  if (willClear && t.kind === "NORMAL" && t.categoryId === null) {
+  // A split parent has categoryId null but IS categorized (via its lines), so it clears freely —
+  // as long as its lines still sum to the parent amount (same coherence rule approvePending holds).
+  if (willClear && t.kind === "NORMAL" && t.categoryId === null && t.splits.length === 0) {
     return { ok: false, reason: "Add a category before marking this transaction cleared." };
+  }
+  if (willClear && t.splits.length > 0 && !splitsSumToParent(t.amountCents, t.splits)) {
+    return { ok: false, reason: "This split's lines don't add up to its total — edit the split first." };
   }
 
   await prisma.transaction.update({ where: { id }, data: { cleared: willClear } });

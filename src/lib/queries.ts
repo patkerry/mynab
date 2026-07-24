@@ -14,10 +14,16 @@ export async function getSidebarData() {
   const active = await getActiveBudgetOptional();
   if (!active) return { accounts: [], acctBalance: {} as Record<string, number>, netWorth: 0, readyToAssign: 0 };
   const budgetId = active.budgetId;
-  const [accounts, transactions, budgetEntries] = await Promise.all([
+  const [accounts, transactions, budgetEntries, rtaSplitLines] = await Promise.all([
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true, kind: true, pending: true } }),
     prisma.budgetEntry.findMany({ where: { budgetId }, select: { amountCents: true } }),
+    // Ready-to-Assign lines of split transactions (categoryId null = the income part of a split
+    // deposit). Parent filters mirror the INCOME-row filters below: not deleted, not pending.
+    prisma.transactionSplit.findMany({
+      where: { budgetId, categoryId: null, transaction: { deletedAt: null, pending: false } },
+      select: { amountCents: true, transaction: { select: { accountId: true } } },
+    }),
   ]);
   const acctBalance: Record<string, number> = {};
   accounts.forEach((a) => (acctBalance[a.id] = 0));
@@ -28,11 +34,14 @@ export async function getSidebarData() {
 
   // Ready-to-Assign mirrors computeDerived: totalIncome - totalAssigned, both all-time aggregates
   // (not month-scoped), so it needs no month here. Income excludes pending (unapproved) rows and
-  // off-budget/tracking accounts, matching budget.ts exactly.
+  // off-budget/tracking accounts, matching budget.ts exactly — INCLUDING the split-RTA term.
+  // KEEP IN SYNC with the totalIncome computation in computeDerived (src/lib/budget.ts).
   const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
-  const totalIncome = transactions
-    .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
-    .reduce((s, t) => s + t.amountCents, 0);
+  const totalIncome =
+    transactions
+      .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
+      .reduce((s, t) => s + t.amountCents, 0) +
+    rtaSplitLines.filter((l) => !offBudget.has(l.transaction.accountId)).reduce((s, l) => s + l.amountCents, 0);
   const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
   const readyToAssign = totalIncome - totalAssigned;
 
@@ -49,14 +58,15 @@ export async function getSidebarData() {
 // it contains still has to reach computeDerived for available()/activityIn() to work.
 export async function getBudgetPageData() {
   const budgetId = await getActiveBudgetId();
-  const [groups, categories, transactions, budgetEntries, accounts] = await Promise.all([
+  const [groups, categories, transactions, budgetEntries, accounts, splits] = await Promise.all([
     prisma.categoryGroup.findMany({ where: { budgetId, isHidden: false }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.category.findMany({ where: { budgetId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
     prisma.account.findMany({ where: { budgetId } }),
+    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  return { groups, categories, transactions, budgetEntries, accounts };
+  return { groups, categories, transactions, budgetEntries, accounts, splits };
 }
 
 // Structure-only data for the Categories management page — groups + categories in display order, no
@@ -82,14 +92,18 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   const budgetId = await getActiveBudgetId();
   const where: Prisma.TransactionWhereInput = { budgetId, deletedAt: null };
   if (filters.accountId !== "all") where.accountId = filters.accountId;
-  if (filters.categoryId === "income") where.kind = "INCOME";
+  // Split parents carry categoryId null, so category-shaped filters must also look at split
+  // lines: "income" includes rows with an RTA line, a real id includes rows with a line in that
+  // category, and "Uncategorized" must NOT match a split parent (it has categories, plural).
+  if (filters.categoryId === "income") where.OR = [{ kind: "INCOME" }, { splits: { some: { categoryId: null } } }];
   else if (filters.categoryId === "none") {
     where.categoryId = null;
     where.kind = "NORMAL";
+    where.splits = { none: {} };
   } else if (filters.categoryId === "pending") {
     where.pending = true; // "Needs review" — imported rows not yet approved
   } else if (filters.categoryId !== "all") {
-    where.categoryId = filters.categoryId;
+    where.OR = [{ categoryId: filters.categoryId }, { splits: { some: { categoryId: filters.categoryId } } }];
   }
 
   const pageSize = ACCOUNT_TXNS_PAGE_SIZE;
@@ -101,7 +115,15 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
     // and Postgres then returns tied rows in arbitrary heap order — which shifts after any update,
     // so approving/editing a row made the register visibly reshuffle. `id` (unique, immutable) as
     // the final key makes the sort stable across refreshes and pagination.
-    prisma.transaction.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }], skip, take: pageSize }),
+    prisma.transaction.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take: pageSize,
+      // The register needs each row's split lines (display + re-editing). Stable line order so
+      // re-opening the editor shows lines as entered.
+      include: { splits: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+    }),
     prisma.transaction.count({ where }),
     // Cleared/uncleared/pending totals must reflect the FULL filtered set, not just the current
     // page — computed here as separate aggregate-only queries (cheap, no row materialization)
@@ -143,13 +165,14 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
 
 export async function getReportsData() {
   const budgetId = await getActiveBudgetId();
-  const [transactions, categories, budgetEntries, accounts] = await Promise.all([
+  const [transactions, categories, budgetEntries, accounts, splits] = await Promise.all([
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.category.findMany({ where: { budgetId } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
     prisma.account.findMany({ where: { budgetId } }),
+    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  return { transactions, categories, budgetEntries, accounts };
+  return { transactions, categories, budgetEntries, accounts, splits };
 }
 
 // The most recent file-import batch that still has un-reviewed (pending) rows — powers the

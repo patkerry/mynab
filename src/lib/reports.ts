@@ -1,5 +1,5 @@
 import { monthKeyOf, monthShort, addMonths } from "./format";
-import type { Transaction, Category, BudgetEntry } from "@/generated/prisma-postgres/client";
+import type { Transaction, Category, BudgetEntry, TransactionSplit } from "@/generated/prisma-postgres/client";
 
 // Reporting is a pure layer over the same all-time, unfiltered rows the budget engine uses. Every
 // function takes a `months` window (array of "YYYY-MM") and filters to it — so the date-range control
@@ -11,6 +11,42 @@ import type { Transaction, Category, BudgetEntry } from "@/generated/prisma-post
 const isSpend = (t: Transaction) => t.kind === "NORMAL" && t.amountCents < 0 && t.categoryId !== null;
 const isIncome = (t: Transaction) =>
   t.kind === "INCOME" || (t.amountCents > 0 && t.kind === "NORMAL" && t.categoryId !== null);
+
+// Fans split parents out into per-line pseudo-rows so every report above classifies them with the
+// SAME isSpend/isIncome predicates as unsplit rows: a categorized line becomes a NORMAL row tagged
+// with that category, an RTA line (categoryId null) becomes an INCOME row. date/payee/pending
+// inherit from the parent, so topMerchants still groups a whole split under one payee, and pending
+// splits stay excluded wherever pending parents would be. Totals are preserved (lines sum to the
+// parent amount), but netWorthTrend should keep the ORIGINAL rows — it's pure balance math over
+// parent amounts and needs no fan-out.
+export function expandSplits(txns: Transaction[], splits: TransactionSplit[]): Transaction[] {
+  if (splits.length === 0) return txns;
+  const byTxn = new Map<string, TransactionSplit[]>();
+  for (const s of splits) {
+    const list = byTxn.get(s.transactionId);
+    if (list) list.push(s);
+    else byTxn.set(s.transactionId, [s]);
+  }
+  const out: Transaction[] = [];
+  for (const t of txns) {
+    const lines = byTxn.get(t.id);
+    if (!lines || lines.length === 0) {
+      out.push(t);
+      continue;
+    }
+    for (const l of lines) {
+      out.push({
+        ...t,
+        id: `${t.id}:${l.id}`,
+        kind: l.categoryId === null ? "INCOME" : "NORMAL",
+        categoryId: l.categoryId,
+        amountCents: l.amountCents,
+        memo: l.memo || t.memo,
+      });
+    }
+  }
+  return out;
+}
 
 export type ReportRange = "1m" | "3m" | "6m" | "12m" | "ytd";
 export const RANGES: { key: ReportRange; label: string }[] = [

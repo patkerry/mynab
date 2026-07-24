@@ -44,18 +44,19 @@ enum MembershipRole {
 // household is a Budget with several memberships. The embedded desktop (SQLite) build uses exactly
 // one Budget and no users/memberships — see electron/main.js and src/lib/budget-context.ts.
 model Budget {
-  id              String           @id @default(cuid())
-  name            String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  accounts        Account[]
-  categoryGroups  CategoryGroup[]
-  categories      Category[]
-  budgetEntries   BudgetEntry[]
-  transactions    Transaction[]
-  reconciliations Reconciliation[]
-  memberships     Membership[]
-  invites         Invite[]
+  id                String             @id @default(cuid())
+  name              String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  accounts          Account[]
+  categoryGroups    CategoryGroup[]
+  categories        Category[]
+  budgetEntries     BudgetEntry[]
+  transactions      Transaction[]
+  transactionSplits TransactionSplit[]
+  reconciliations   Reconciliation[]
+  memberships       Membership[]
+  invites           Invite[]
 
   @@map("budgets")
 }
@@ -145,11 +146,11 @@ model CategoryGroup {
 }
 
 model Category {
-  id              String        @id @default(cuid())
+  id              String             @id @default(cuid())
   budgetId        String
-  budget          Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget          Budget             @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   groupId         String
-  group           CategoryGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  group           CategoryGroup      @relation(fields: [groupId], references: [id], onDelete: Restrict)
   name            String
   goalType        GoalType?
   goalAmountCents Int?
@@ -157,17 +158,18 @@ model Category {
   // forward). Purely a display filter in BudgetView — engine math (available/RTA/goals),
   // transaction history, and the category picker are all completely unaffected; a hidden
   // category still works exactly like any other, it just doesn't clutter the main budget list.
-  isHidden        Boolean       @default(false)
-  sortOrder       Int           @default(0) // manual drag-and-drop ordering; 0 falls back to createdAt order
+  isHidden        Boolean            @default(false)
+  sortOrder       Int                @default(0) // manual drag-and-drop ordering; 0 falls back to createdAt order
   // Set only on a card's auto-created payment category. Its monthly activity is DERIVED
   // (see computeDerived in src/lib/budget.ts) rather than summed from transactions tagged
   // with this category's own id, the way every other category works.
-  linkedAccountId String?       @unique
-  linkedAccount   Account?      @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  linkedAccountId String?            @unique
+  linkedAccount   Account?           @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
   budgetEntries   BudgetEntry[]
   transactions    Transaction[]
+  splitLines      TransactionSplit[]
 
   @@index([budgetId])
   @@index([groupId])
@@ -192,25 +194,25 @@ model BudgetEntry {
 }
 
 model Transaction {
-  id                   String          @id @default(cuid())
+  id                   String             @id @default(cuid())
   budgetId             String
-  budget               Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget               Budget             @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   accountId            String
-  account              Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account              Account            @relation(fields: [accountId], references: [id], onDelete: Restrict)
   date                 String // "YYYY-MM-DD" — zero-padded for correct lexicographic ordering
   payee                String
-  memo                 String          @default("")
-  kind                 TransactionKind @default(NORMAL)
+  memo                 String             @default("")
+  kind                 TransactionKind    @default(NORMAL)
   categoryId           String?
-  category             Category?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category             Category?          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   amountCents          Int // signed cents; positive = inflow, negative = outflow
-  cleared              Boolean         @default(false)
+  cleared              Boolean            @default(false)
   // True until a file-imported row is reviewed/approved. Excluded from category
   // activity/available and totalIncome (see buildActivityByMonth/computeDerived in
   // src/lib/budget.ts) but still counted in acctBalance/netWorth — the money already moved in
   // real life, it just hasn't been assigned a job yet. Saving any edit (see updateTransaction
   // in accounts/actions.ts) clears it — that save IS the approval, no separate action needed.
-  pending              Boolean         @default(false)
+  pending              Boolean            @default(false)
   // Bank-assigned FITID from a QFX/OFX import; null for CSV/manual entries. Unique per account
   // so re-importing an overlapping QFX file is a no-op for rows already present (see
   // importTransactions in accounts/actions.ts, which inserts with skipDuplicates: true).
@@ -230,9 +232,10 @@ model Transaction {
   // Groups every row created by one file import so the whole batch can be undone (see runImport in
   // src/lib/import.ts and undoImport in accounts/actions.ts). Null for manual entries / transfers.
   importBatchId        String?
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
   reconciliation       Reconciliation? // set if this transaction is the adjustment a reconciliation produced
+  splits               TransactionSplit[] // non-empty iff this transaction is split — see TransactionSplit below
 
   @@unique([accountId, externalId])
   @@index([budgetId])
@@ -242,6 +245,31 @@ model Transaction {
   @@index([transferId])
   @@index([importBatchId])
   @@map("transactions")
+}
+
+// One allocation line of a split transaction. A Transaction "is split" iff it has rows here:
+// the parent stays kind NORMAL with categoryId null and amountCents equal to the single real
+// bank movement, which the lines must sum to exactly (enforced in accounts/actions.ts via
+// validateSplitDraft in src/lib/splits.ts — not at the DB level). categoryId null = a
+// Ready-to-Assign (income) line; forbidden on CREDIT accounts (the engine deliberately does
+// not model income on cards — see the double-count lesson in ARCHITECTURE.md).
+model TransactionSplit {
+  id            String      @id @default(cuid())
+  budgetId      String
+  budget        Budget      @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  categoryId    String?
+  category      Category?   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountCents   Int // signed cents, same convention as Transaction.amountCents
+  memo          String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([budgetId])
+  @@index([transactionId])
+  @@index([categoryId])
+  @@map("transaction_splits")
 }
 
 // One row per reconciliation performed, whether or not it produced an adjustment — this is the

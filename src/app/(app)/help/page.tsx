@@ -4,9 +4,12 @@ import styles from "./help.module.css";
 // purpose: zero-based budgeting isn't what most people mean by "budgeting," and users who skip
 // the reframe tend to read correct numbers as bugs. Source of truth for the guide's content is
 // THIS file; USER_GUIDE.md in the repo root is just a pointer here.
-export default function HelpPage() {
-  const UI = ({ children }: { children: React.ReactNode }) => <span className={styles.ui}>{children}</span>;
+// Inline reference to a UI label ("Adjust balance", "Approve selected"). Module scope, not inside
+// HelpPage — defining a component during render trips react/no-unescaped-entities' sibling rule
+// and would remount on every render if this page ever gained state.
+const UI = ({ children }: { children: React.ReactNode }) => <span className={styles.ui}>{children}</span>;
 
+export default function HelpPage() {
   return (
     <div className={styles.page}>
       <div>
@@ -186,6 +189,21 @@ export default function HelpPage() {
             your wealth, not part of this month&rsquo;s grocery decision.
           </li>
         </ul>
+
+        <h4 className={styles.section}>Splitting a transaction</h4>
+        <p>
+          One Costco run is rarely one category. When you add or edit a transaction, pick{" "}
+          <UI>Split across categories…</UI> in the category dropdown and give each part its own category and
+          amount. The lines have to add up to the transaction total; the editor shows what&rsquo;s left to
+          allocate as you type, and the register shows the row as &ldquo;Split (Groceries +1)&rdquo; with the
+          details on hover.
+        </p>
+        <p>
+          Splits work on deposits too. If a bank deposit is part paycheck, part reimbursement, split it and
+          point the paycheck part at <em>Inflow: Ready to Assign</em> and the reimbursement part back at the
+          category you originally spent from. (On a credit card every line needs a real category — no Ready to
+          Assign lines there.)
+        </p>
 
         <h4 className={styles.section}>Importing from your bank</h4>
         <p>

@@ -34,13 +34,14 @@ export async function setAssigned(categoryId: string, month: string, cents: numb
 // each category already had this month, since computeAutoAssignAllocations returns absolute totals).
 export async function autoAssignGoals(month: string): Promise<{ count: number; totalCents: number }> {
   const { budgetId } = await requireBudget("write");
-  const [accounts, categories, transactions, budgetEntries] = await Promise.all([
+  const [accounts, categories, transactions, budgetEntries, splits] = await Promise.all([
     prisma.account.findMany({ where: { budgetId } }),
     prisma.category.findMany({ where: { budgetId } }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
+    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  const updates = computeAutoAssignAllocations({ accounts, categories, transactions, budgetEntries }, month);
+  const updates = computeAutoAssignAllocations({ accounts, categories, transactions, budgetEntries, splits }, month);
   const priorForCat = new Map(
     budgetEntries.filter((e) => e.yearMonth === month).map((e) => [e.categoryId, e.amountCents])
   );
@@ -65,13 +66,14 @@ export async function autoAssignGoals(month: string): Promise<{ count: number; t
 // count 0 means there was no recent history to average (nothing written).
 export async function quickBudget(month: string): Promise<{ count: number; totalCents: number }> {
   const { budgetId } = await requireBudget("write");
-  const [accounts, categories, transactions, budgetEntries] = await Promise.all([
+  const [accounts, categories, transactions, budgetEntries, splits] = await Promise.all([
     prisma.account.findMany({ where: { budgetId } }),
     prisma.category.findMany({ where: { budgetId } }),
     prisma.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     prisma.budgetEntry.findMany({ where: { budgetId } }),
+    prisma.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  const updates = computeQuickBudgetAllocations({ accounts, categories, transactions, budgetEntries }, month);
+  const updates = computeQuickBudgetAllocations({ accounts, categories, transactions, budgetEntries, splits }, month);
   if (updates.length) {
     await prisma.$transaction(
       updates.map((u) =>

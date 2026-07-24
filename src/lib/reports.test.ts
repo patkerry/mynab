@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   monthsForRange,
+  expandSplits,
   summary,
   spendByCategory,
   incomeVsSpending,
+  netWorthTrend,
   categorySpendTrend,
   topMerchants,
   budgetVsActual,
 } from "./reports";
-import type { Category, Transaction, BudgetEntry } from "@/generated/prisma-postgres/client";
+import type { Category, Transaction, BudgetEntry, TransactionSplit } from "@/generated/prisma-postgres/client";
 
 const cat = (o: Partial<Category> & Pick<Category, "id" | "name">): Category =>
   ({ groupId: "g", goalType: null, goalAmountCents: null, linkedAccountId: null, budgetId: "b", sortOrder: 0, isHidden: false, createdAt: new Date(), updatedAt: new Date(), ...o } as Category);
@@ -114,5 +116,70 @@ describe("budgetVsActual", () => {
     const entries = [be({ id: "b1", categoryId: "c1", yearMonth: "2026-07", amountCents: 40000 }), be({ id: "b2", categoryId: "cp", yearMonth: "2026-07", amountCents: 10000 })];
     const r = budgetVsActual(txns, CATS, entries, ["2026-07"]);
     expect(r).toEqual([{ id: "c1", name: "Groceries", Assigned: 400, Spent: 300 }]);
+  });
+});
+
+describe("expandSplits", () => {
+  const line = (o: Partial<TransactionSplit> & Pick<TransactionSplit, "id" | "transactionId" | "amountCents"> & { categoryId: string | null }): TransactionSplit =>
+    ({ budgetId: "b", memo: "", createdAt: new Date(), updatedAt: new Date(), ...o } as TransactionSplit);
+
+  // A split deposit (+$300: $250 paycheck RTA line + $50 Groceries refund) and a split spend
+  // (-$80 Costco: $50 Groceries + $30 Rent), plus one plain row that must pass through untouched.
+  const txns = [
+    txn({ id: "t1", date: "2026-07-02", amountCents: 30000, categoryId: null, payee: "Deposit" }),
+    txn({ id: "t2", date: "2026-07-05", amountCents: -8000, categoryId: null, payee: "Costco" }),
+    txn({ id: "t3", date: "2026-07-06", amountCents: -1000, categoryId: "c1", payee: "Corner Store" }),
+  ];
+  const splits = [
+    line({ id: "s1", transactionId: "t1", categoryId: null, amountCents: 25000 }),
+    line({ id: "s2", transactionId: "t1", categoryId: "c1", amountCents: 5000 }),
+    line({ id: "s3", transactionId: "t2", categoryId: "c1", amountCents: -5000 }),
+    line({ id: "s4", transactionId: "t2", categoryId: "c2", amountCents: -3000 }),
+  ];
+  const expanded = expandSplits(txns, splits);
+
+  it("fans split parents into per-line pseudo-rows and leaves plain rows untouched", () => {
+    expect(expanded).toHaveLength(5); // 2 + 2 + 1
+    expect(expanded.filter((t) => t.kind === "INCOME")).toHaveLength(1); // the RTA line
+    expect(expanded.find((t) => t.id === "t3")).toBe(txns[2]);
+  });
+
+  it("spendByCategory sees each line's category", () => {
+    const by = spendByCategory(expanded, CATS, ["2026-07"]);
+    expect(by).toEqual(
+      expect.arrayContaining([
+        { id: "c1", name: "Groceries", value: 60 }, // 50 split + 10 plain
+        { id: "c2", name: "Rent", value: 30 },
+      ])
+    );
+  });
+
+  it("summary counts the RTA line as income and the refund line as categorized inflow", () => {
+    const s = summary(expanded, ["2026-07"]);
+    expect(s.incomeCents).toBe(30000); // 25000 INCOME pseudo-row + 5000 categorized inflow
+    expect(s.spendingCents).toBe(9000);
+  });
+
+  it("topMerchants attributes a whole split to one payee", () => {
+    const m = topMerchants(expanded, ["2026-07"]);
+    expect(m.find((r) => r.name === "Costco")?.value).toBe(80);
+  });
+
+  it("netWorthTrend over the ORIGINAL rows equals the trend over expanded rows (totals preserved)", () => {
+    expect(netWorthTrend(txns, ["2026-07"])).toEqual(netWorthTrend(expanded, ["2026-07"]));
+  });
+
+  it("pending split parents produce pending pseudo-rows (still excluded everywhere)", () => {
+    const pendingParent = [txn({ id: "t9", date: "2026-07-09", amountCents: -4000, categoryId: null, pending: true })];
+    const pendingLines = [
+      line({ id: "s9", transactionId: "t9", categoryId: "c1", amountCents: -4000 }),
+      line({ id: "s10", transactionId: "t9", categoryId: "c2", amountCents: 0 }),
+    ];
+    const out = expandSplits(pendingParent, pendingLines);
+    expect(out.every((t) => t.pending)).toBe(true);
+  });
+
+  it("no splits = same array back", () => {
+    expect(expandSplits(txns, [])).toBe(txns);
   });
 });

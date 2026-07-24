@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, CheckCheck, Trash2, Scale, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
+import { splitsSumToParent } from "@/lib/splits";
 import { deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
-import type { Account, Category, Reconciliation, Transaction } from "@/generated/prisma-postgres/client";
-import type { TxnDraft } from "@/lib/types";
+import type { Account, Category, Reconciliation } from "@/generated/prisma-postgres/client";
+import type { TransactionWithSplits, TxnDraft } from "@/lib/types";
 import styles from "./AccountsView.module.css";
 
 export function AccountsView({
@@ -29,7 +30,7 @@ export function AccountsView({
   lastReconciliation,
   lastImportBatch,
 }: {
-  transactions: Transaction[];
+  transactions: TransactionWithSplits[];
   totalCount: number;
   page: number;
   pageSize: number;
@@ -51,8 +52,11 @@ export function AccountsView({
   const { openModal } = useModal();
   const { showToast } = useToast();
 
-  // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess).
-  const approvable = (t: Transaction) => t.pending && t.categoryId !== null && t.kind === "NORMAL";
+  // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess) —
+  // or split lines that sum exactly to the row's total (an incoherent split must be re-edited,
+  // never approved; approvePending re-checks the same rule server-side).
+  const approvable = (t: TransactionWithSplits) =>
+    t.pending && t.kind === "NORMAL" && (t.categoryId !== null || (t.splits.length > 0 && splitsSumToParent(t.amountCents, t.splits)));
   const approvableIds = transactions.filter(approvable).map((t) => t.id);
   const toggleSel = (id: string) =>
     setSelected((prev) => {
@@ -87,9 +91,15 @@ export function AccountsView({
   };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
-  // catName (ynab-clone.jsx line 542), where both cases carried categoryId: null.
-  const catName = (t: Transaction) =>
-    t.kind === "INCOME" ? "Ready to Assign" : t.categoryId === null ? "—" : categories.find((c) => c.id === t.categoryId)?.name || "—";
+  // catName (ynab-clone.jsx line 542), where both cases carried categoryId: null. Split rows
+  // (categoryId null but lines present) show "Split (N)" here; the per-line detail renders as
+  // indented sub-rows directly beneath the parent.
+  const lineName = (categoryId: string | null) =>
+    categoryId === null ? "Ready to Assign" : categories.find((c) => c.id === categoryId)?.name || "—";
+  const catName = (t: TransactionWithSplits) => {
+    if (t.splits.length > 0) return `Split (${t.splits.length})`;
+    return t.kind === "INCOME" ? "Ready to Assign" : t.categoryId === null ? "—" : categories.find((c) => c.id === t.categoryId)?.name || "—";
+  };
   const acctName = (id: string) => accounts.find((a) => a.id === id)?.name || "?";
 
   const setFilters = (next: { account?: string; category?: string }) => {
@@ -101,13 +111,19 @@ export function AccountsView({
   };
   const goToPage = (p: number) => router.push(`/accounts?account=${accountFilter}&category=${categoryFilter}&page=${p}`);
 
-  const txnToDraft = (t: Transaction): TxnDraft => ({
+  const txnToDraft = (t: TransactionWithSplits): TxnDraft => ({
     date: t.date,
     payee: t.payee,
-    categoryId: t.kind === "INCOME" ? "income" : t.categoryId || "",
+    categoryId: t.splits.length > 0 ? "split" : t.kind === "INCOME" ? "income" : t.categoryId || "",
     accountId: t.accountId,
     amount: (Math.abs(t.amountCents) / 100).toFixed(2),
     memo: t.memo || "",
+    // Re-editing a split: reconstruct unsigned line drafts + the direction from the parent sign.
+    splits:
+      t.splits.length > 0
+        ? t.splits.map((s) => ({ categoryId: s.categoryId ?? "income", amount: (Math.abs(s.amountCents) / 100).toFixed(2), memo: s.memo || "" }))
+        : undefined,
+    splitDirection: t.splits.length > 0 ? (t.amountCents >= 0 ? "inflow" : "outflow") : undefined,
   });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -295,8 +311,8 @@ export function AccountsView({
           }
           const transfer = t.kind === "TRANSFER";
           return (
+            <Fragment key={t.id}>
             <div
-              key={t.id}
               className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
               onClick={() => {
                 if (!transfer) {
@@ -362,6 +378,35 @@ export function AccountsView({
                 </button>
               </div>
             </div>
+            {/* Split lines as sub-rows: identical styling to a normal register row (same grid,
+                type, colors, pending tint), just indented in the category column. Display-only —
+                clicking one edits the whole transaction (a line isn't independently editable;
+                the split editor is, since lines must sum to the parent). */}
+            {t.splits.map((s) => (
+              <div
+                key={s.id}
+                className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
+                style={{ gridTemplateColumns: TXN_GRID, cursor: "pointer" }}
+                onClick={() => {
+                  setEditingId(t.id);
+                  setAdding(false);
+                }}
+                title="Part of the split above — click to edit the whole transaction"
+              >
+                <span />
+                <span />
+                <span className={`${styles.cellMuted2} ${styles.splitSubCat}`}>↳ {lineName(s.categoryId)}</span>
+                <span className={styles.memoCell} style={{ fontStyle: s.memo ? "italic" : "normal" }}>
+                  {s.memo || "—"}
+                </span>
+                <span />
+                <span className={`num ${styles.amountCell}`} style={{ color: s.amountCents < 0 ? "var(--ink)" : "var(--posInk)" }}>
+                  {fmt(s.amountCents)}
+                </span>
+                <span />
+              </div>
+            ))}
+            </Fragment>
           );
         })}
       </div>

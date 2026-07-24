@@ -39,8 +39,10 @@ SQLite) build works but is a secondary target — see the note in the dual-schem
 > desktop target was bolted on afterward and gets far less exercise. It genuinely works — the
 > dual-schema split, the runtime client cast in `src/lib/db.ts`, and the `electron:*` build scripts
 > are all real and functional — but treat it as second-class: the parity check is only a *text*
-> check (see below), migrations against a live desktop SQLite DB are a known soft spot
-> (`electron/main.js` migrates only on a fresh DB), and web-only concerns (Google OAuth, multi-user,
+> check (see below), desktop migrations are under-exercised (`electron/main.js`'s `runMigrations`
+> DOES apply pending migrations to existing DBs on every launch, tracked in its own
+> `_app_migrations` table — but it runs each migration.sql un-transactioned via `db.exec`, so a
+> mid-file failure on a live DB doesn't roll back), and web-only concerns (Google OAuth, multi-user,
 > admin) simply don't exist on desktop, so those code paths are gated on `DB_PROVIDER`/`showAuth`
 > rather than shared. If you touch schema or data-layer code, verify the desktop build explicitly —
 > don't assume web-green means desktop-green.
@@ -92,6 +94,24 @@ all-time-unfiltered `{ accounts, categories, transactions, budgetEntries }`.
   looked right from aggregate math, but a from-scratch test proved it **double-counts** the money
   (once via `totalIncome`, once via the payment category). Reverted. If this comes up again,
   write the isolated test *first*.
+- **Split transactions** (`TransactionSplit` table): one register row allocated across multiple
+  lines. The parent stays `kind: NORMAL` with `categoryId: null` and `amountCents` = the single
+  real bank movement; lines must sum to it exactly (`validateSplitDraft` in `src/lib/splits.ts` —
+  the SAME pure validator runs client-side in the editor and server-side in the actions). A line's
+  `categoryId: null` means a Ready-to-Assign (income) line — that's how a deposit splits into
+  "paycheck part + category-refund part"; those amounts feed `totalIncome`, not any category.
+  Attribution in `buildActivityByMonth` is per-line and REPLACES the single-category/classify path
+  for split rows (never both — that would double-count). A split CARD purchase feeds the payment
+  category per categorized line via `cardPurchaseContributions`, shared with
+  `computePaymentCategoryBreakdown` so the breakdown invariant can't drift. RTA lines are
+  **forbidden on CREDIT accounts** (see the income-on-card double-count lesson below — same rule,
+  enforced at validation). Transfers are never split; payment categories are never line targets;
+  mixed-sign splits are out of scope (lines are unsigned in the editor; one direction toggle signs
+  all). `BudgetInputs.splits` is deliberately REQUIRED so a construction site that forgets to
+  fetch lines is a compile error, not a silently split-blind computation. NB: the reconciliation
+  identity below is unaffected by splits, but (split or not) it only holds against net worth
+  *excluding unpaid card debt* — a payment category's positive available has no cash counterpart
+  until the payment transfer (locked by the split card-purchase test).
 - **`pending`** (file-imported, not-yet-approved transactions): counted in `acctBalance`/
   `netWorth` immediately, invisible to every category/activity computation
   (`buildActivityByMonth`'s first line: `if (t.pending) return;`) until a human approves them.
@@ -178,8 +198,11 @@ normalized merchant) with a static `KNOWN_MERCHANTS` seed as fallback. The guess
 *suggestion*: the row stays `pending`, so it never counts against a budget until approved, and
 each approval becomes training data for the next import (no separate rules table — history IS the
 model). Deliberately chose this over a persistent `MerchantRule` table to avoid a schema
-migration against live desktop DBs (and the Electron migrate-only-on-fresh-DB gap in
-`electron/main.js`).
+migration against live desktop DBs. (At the time, `electron/main.js` migrated only fresh DBs;
+its `runMigrations` now applies pending migrations to existing DBs on every launch, so this
+constraint has relaxed — the history-IS-the-model design stays because it's simpler, not because
+migration is impossible.) Split parents carry `categoryId: null`, so they're naturally excluded
+from guess history; imports always arrive unsplit — users split during review.
 
 ## Reconciliation
 
@@ -193,8 +216,11 @@ including a clean reconciliation with no adjustment.
 - **Ready-to-Assign is computed in `getSidebarData` (`src/lib/queries.ts`), NOT via
   `computeDerived`.** RTA is `totalIncome − totalAssigned`, and both are all-time aggregates (not
   month-scoped — see the engine section), so the sidebar can show it without knowing the selected
-  month or paying for a full `computeDerived`. If you ever make RTA month-scoped in the engine, this
-  sidebar copy must change too — they are two implementations of the same formula.
+  month or paying for a full `computeDerived`. totalIncome has TWO terms in both places: whole
+  INCOME rows plus split transactions' RTA lines. If you change the engine's formula (either
+  term, or make it month-scoped), this sidebar copy must change identically — they are two
+  implementations of the same formula, and the manual cross-check is "sidebar RTA === budget
+  page banner".
 - **Signed-in user's name** comes straight off the Auth.js session (`session.user.name`, Google's
   display name; falls back to email). Rendered at the top of the sidebar under the brand, web-only
   (gated on `showAuth`, same as Sign out) — desktop has no session.
@@ -249,9 +275,11 @@ they served the original data migration and are gone. Docs or memories referenci
 
 - **What's tested** (`npm test`, Vitest, all pure-function unit tests): the budgeting engine
   (`budget.test.ts` — the big one, incl. rollover, payment categories, the netWorth/RTA identity,
-  pending exclusion), CSV + QFX parsing (`csv.test.ts`, `qfx.test.ts`), merchant extraction /
-  category guessing (`merchant.test.ts`), reports (`reports.test.ts`), the sign-in allowlist
-  (`auth-allowlist.test.ts`), and schema parity (`check-schema-parity.ts`).
+  pending exclusion, split-transaction attribution), split validation rules (`splits.test.ts` —
+  incl. the no-RTA-line-on-credit guard and exact-sum rule), CSV + QFX parsing (`csv.test.ts`,
+  `qfx.test.ts`), merchant extraction / category guessing (`merchant.test.ts`), reports incl. the
+  split fan-out (`reports.test.ts`), the sign-in allowlist (`auth-allowlist.test.ts`), and schema
+  parity (`check-schema-parity.ts`).
 - **What's NOT tested — know this before assessing:**
   - **No DB/integration tests.** Everything in `src/lib/queries.ts` and the Server Actions
     (`accounts/actions.ts`, etc.) runs live Prisma — there is no test harness that stands up a DB,

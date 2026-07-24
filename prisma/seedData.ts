@@ -58,6 +58,14 @@ export function buildSeedData(budgetId: string) {
     { id: uid("t"), budgetId, accountId: p("a_check"), date: d(6), payee: "City Power & Light", kind: "NORMAL" as const, categoryId: p("c_elec"), amountCents: -7300, cleared: true, memo: "" },
     { id: uid("t"), budgetId, accountId: p("a_cc"), date: d(7), payee: "Bangkok Kitchen", kind: "NORMAL" as const, categoryId: p("c_dine"), amountCents: -4200, cleared: false, memo: "Dinner" },
     { id: uid("t"), budgetId, accountId: p("a_check"), date: d(8), payee: "Shell", kind: "NORMAL" as const, categoryId: p("c_trans"), amountCents: -5500, cleared: true, memo: "" },
+    // A split transaction, so the feature is visible out of the box: one Costco run allocated
+    // across two categories. Parent stays NORMAL with categoryId null; the lines below sum to it.
+    { id: p("t_costco"), budgetId, accountId: p("a_check"), date: d(10), payee: "Costco", kind: "NORMAL" as const, categoryId: null, amountCents: -9800, cleared: true, memo: "Split demo" },
+  ];
+
+  const transactionSplits = [
+    { budgetId, transactionId: p("t_costco"), categoryId: p("c_groc"), amountCents: -7300, memo: "" },
+    { budgetId, transactionId: p("t_costco"), categoryId: p("c_fun"), amountCents: -2500, memo: "" },
   ];
 
   const budgetEntries = [
@@ -70,7 +78,7 @@ export function buildSeedData(budgetId: string) {
     { budgetId, categoryId: p("c_fun"), yearMonth: ym, amountCents: 10000 },
   ];
 
-  return { accounts, groups, categories, transactions, budgetEntries };
+  return { accounts, groups, categories, transactions, transactionSplits, budgetEntries };
 }
 
 // Shared by prisma/seed.ts and the resetDemoData Server Action — order matters for FK
@@ -85,6 +93,9 @@ export async function resetDatabase(prisma: PrismaClient, budgetId: string) {
     create: { id: budgetId, name: "My Budget" },
   });
   await prisma.$transaction([
+    // Split lines first: their category FK is Restrict, so they must go before categories (their
+    // transaction FK would cascade, but this module's convention is the explicit ordered list).
+    prisma.transactionSplit.deleteMany({ where: { budgetId } }),
     prisma.transaction.deleteMany({ where: { budgetId } }),
     prisma.budgetEntry.deleteMany({ where: { budgetId } }),
     prisma.category.deleteMany({ where: { budgetId } }),
@@ -96,6 +107,7 @@ export async function resetDatabase(prisma: PrismaClient, budgetId: string) {
     prisma.categoryGroup.createMany({ data: data.groups }),
     prisma.category.createMany({ data: data.categories }),
     prisma.transaction.createMany({ data: data.transactions }),
+    prisma.transactionSplit.createMany({ data: data.transactionSplits }),
     prisma.budgetEntry.createMany({ data: data.budgetEntries }),
   ]);
 }

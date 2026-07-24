@@ -10,11 +10,11 @@ import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
 import { autoAssignGoals, quickBudget, setGroupHidden, reorderCategories, reorderGroups } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
-import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
+import type { Account, BudgetEntry, Category, CategoryGroup, Transaction, TransactionSplit } from "@/generated/prisma-postgres/client";
 import styles from "./BudgetView.module.css";
 
-function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], month: string): CatBreakdown {
-  const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries }, categoryId, month);
+function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], splits: TransactionSplit[], month: string): CatBreakdown {
+  const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries, splits }, categoryId, month);
   if (!raw) return { sources: [], paymentsTotal: 0, paymentsCount: 0 };
   return {
     sources: raw.breakdown.map((b) =>
@@ -34,6 +34,7 @@ export function BudgetView({
   accounts,
   transactions,
   budgetEntries,
+  splits,
 }: {
   month: string;
   groups: CategoryGroup[];
@@ -41,6 +42,7 @@ export function BudgetView({
   accounts: Account[];
   transactions: Transaction[];
   budgetEntries: BudgetEntry[];
+  splits: TransactionSplit[];
 }) {
   const { openModal } = useModal();
   const { showToast } = useToast();
@@ -74,8 +76,8 @@ export function BudgetView({
     setDragGroupId(null);
   };
   const derived = useMemo(
-    () => computeDerived({ accounts, categories, transactions, budgetEntries }, month),
-    [accounts, categories, transactions, budgetEntries, month]
+    () => computeDerived({ accounts, categories, transactions, budgetEntries, splits }, month),
+    [accounts, categories, transactions, budgetEntries, splits, month]
   );
   const lastMonth = addMonths(month, -1);
 
@@ -286,7 +288,7 @@ export function BudgetView({
                   c={c}
                   month={month}
                   derived={derived}
-                  breakdown={resolveBreakdown(c.id, categories, transactions, budgetEntries, accounts, month)}
+                  breakdown={resolveBreakdown(c.id, categories, transactions, budgetEntries, accounts, splits, month)}
                 />
               ))}
             </div>

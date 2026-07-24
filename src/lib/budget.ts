@@ -1,11 +1,17 @@
 import { addMonths, monthKeyOf } from "./format";
-import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
+import { buildSplitsByTransaction } from "./splits";
+import type { Account, BudgetEntry, Category, Transaction, TransactionSplit } from "@/generated/prisma-postgres/client";
 
 export type BudgetInputs = {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[]; // all-time, unfiltered
   budgetEntries: BudgetEntry[]; // all-time, unfiltered
+  // All-time split lines. Deliberately REQUIRED (not optional): every construction site must
+  // decide what to pass, so a forgotten fetch is a compile error instead of a silently
+  // split-blind computation. Lines whose parent isn't in `transactions` (soft-deleted) are
+  // unreachable — attribution always starts from a transaction.
+  splits: TransactionSplit[];
 };
 
 export type Derived = {
@@ -36,7 +42,8 @@ function cumulativeUpTo(byMonth: Map<string, Map<string, number>>, key: string, 
 // readyToAssign are genuinely all-time aggregates (not scoped to the selected month) in the
 // source app, so budgetEntries/transactions must be fetched in full rather than month-bounded.
 export function computeDerived(inputs: BudgetInputs, month: string): Derived {
-  const { accounts, categories, transactions, budgetEntries } = inputs;
+  const { accounts, categories, transactions, budgetEntries, splits } = inputs;
+  const splitsByTxn = buildSplitsByTransaction(splits);
 
   // Off-budget (tracking) accounts — Investment/Loan. Their balances belong in net worth, but their
   // transactions are excluded from the zero-based budget: category activity, income, and Ready-to-
@@ -75,7 +82,8 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
 
   const activityByMonth = buildActivityByMonth(
     transactions.filter((t) => !offBudget.has(t.accountId)),
-    accountIdToPaymentCategoryId
+    accountIdToPaymentCategoryId,
+    splitsByTxn
   );
 
   const assignedIn = (catId: string, ym: string) => budgetedByMonth.get(ym)?.get(catId) || 0;
@@ -84,9 +92,18 @@ export function computeDerived(inputs: BudgetInputs, month: string): Derived {
   const activityUpTo = (catId: string, ym: string) => cumulativeUpTo(activityByMonth, catId, ym);
   const available = (catId: string, ym: string) => assignedUpTo(catId, ym) + activityUpTo(catId, ym);
 
-  const totalIncome = transactions
-    .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
-    .reduce((s, t) => s + t.amountCents, 0);
+  // Income = whole INCOME rows, plus the Ready-to-Assign lines of split transactions (a split
+  // deposit's paycheck part). Both terms iterate transactions (not split rows) so the same
+  // pending/off-budget filters govern both — and so a soft-deleted parent's lines can't count.
+  // KEEP IN SYNC: getSidebarData (src/lib/queries.ts) duplicates this formula, including the
+  // split-RTA term, because the sidebar can't afford a full computeDerived.
+  const totalIncome =
+    transactions
+      .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
+      .reduce((s, t) => s + t.amountCents, 0) +
+    transactions
+      .filter((t) => !t.pending && !offBudget.has(t.accountId))
+      .reduce((s, t) => s + (splitsByTxn.get(t.id) ?? []).reduce((a, l) => (l.categoryId === null ? a + l.amountCents : a), 0), 0);
   const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
   const readyToAssign = totalIncome - totalAssigned;
 
@@ -175,13 +192,32 @@ function classifyCardTransaction(
   return { type: "none" };
 }
 
+// The per-line analogue of classifyCardTransaction's "purchase" branch, for split rows on a
+// card account. Shared by buildActivityByMonth AND computePaymentCategoryBreakdown — the same
+// reason classifyCardTransaction is shared: so the aggregate path and the transparency path
+// can't silently drift, which would break the breakdown invariant
+// (sum(breakdown) - sum(payments) === activityIn). RTA lines (categoryId null) contribute
+// nothing here: they're forbidden on CREDIT accounts by validateSplitDraft, and defensively
+// ignoring one mirrors the documented income-on-card decision rather than relitigating it.
+function cardPurchaseContributions(
+  t: Transaction,
+  lines: TransactionSplit[]
+): { sourceCategoryId: string; contribution: number }[] {
+  if (t.kind !== "NORMAL") return [];
+  return lines
+    .filter((l) => l.categoryId != null)
+    .map((l) => ({ sourceCategoryId: l.categoryId!, contribution: -l.amountCents }));
+}
+
 // One pass over all transactions building Map<month, Map<categoryId, netCents>>. Every
-// category gets its ordinary "sum of transactions tagged with this categoryId" contribution;
-// payment categories additionally get a derived contribution from their linked card's
-// transactions via classifyCardTransaction above.
+// category gets its ordinary "sum of transactions tagged with this categoryId" contribution
+// (or, for a split row, one contribution per categorized line); payment categories additionally
+// get a derived contribution from their linked card's transactions via classifyCardTransaction /
+// cardPurchaseContributions above.
 function buildActivityByMonth(
   transactions: Transaction[],
-  accountIdToPaymentCategoryId: Map<string, string>
+  accountIdToPaymentCategoryId: Map<string, string>,
+  splitsByTxn: Map<string, TransactionSplit[]>
 ): Map<string, Map<string, number>> {
   const byMonth = new Map<string, Map<string, number>>();
   const add = (ym: string, categoryId: string, cents: number) => {
@@ -198,6 +234,23 @@ function buildActivityByMonth(
     // human reviews and approves them — see the `pending` field's doc comment in schema.prisma.
     if (t.pending) return;
     const ym = monthKeyOf(t.date);
+
+    // Split row: per-line attribution REPLACES the single-category and classify paths entirely
+    // (the parent's categoryId is null by construction, but branch explicitly and return so
+    // parent- and line-level attribution can never both fire — that would double-count).
+    const lines = splitsByTxn.get(t.id);
+    if (lines && lines.length > 0) {
+      lines.forEach((l) => {
+        if (l.categoryId) add(ym, l.categoryId, l.amountCents);
+        // RTA lines feed totalIncome in computeDerived, not any category's activity.
+      });
+      const paymentCategoryId = accountIdToPaymentCategoryId.get(t.accountId);
+      if (paymentCategoryId) {
+        cardPurchaseContributions(t, lines).forEach((p) => add(ym, paymentCategoryId, p.contribution));
+      }
+      return;
+    }
+
     if (t.categoryId) add(ym, t.categoryId, t.amountCents);
 
     const paymentCategoryId = accountIdToPaymentCategoryId.get(t.accountId);
@@ -241,6 +294,7 @@ export function computePaymentCategoryBreakdown(
   const debtsByCounterpartAccount = new Map<string, number>();
   const payments: PaymentEntry[] = [];
   const transferPair = buildTransferPairLookup(inputs.transactions);
+  const splitsByTxn = buildSplitsByTransaction(inputs.splits);
   const accountIdToPaymentCategoryId = new Map<string, string>();
   inputs.categories.forEach((c) => {
     if (c.linkedAccountId) accountIdToPaymentCategoryId.set(c.linkedAccountId, c.id);
@@ -248,6 +302,15 @@ export function computePaymentCategoryBreakdown(
 
   inputs.transactions.forEach((t) => {
     if (t.pending || t.accountId !== category.linkedAccountId || monthKeyOf(t.date) !== month) return;
+    // Split card purchase: identical per-line branch to buildActivityByMonth (shared
+    // cardPurchaseContributions), preserving the breakdown invariant.
+    const lines = splitsByTxn.get(t.id);
+    if (lines && lines.length > 0) {
+      cardPurchaseContributions(t, lines).forEach(({ sourceCategoryId, contribution }) => {
+        purchasesBySourceCategory.set(sourceCategoryId, (purchasesBySourceCategory.get(sourceCategoryId) || 0) + contribution);
+      });
+      return;
+    }
     const classification = classifyCardTransaction(t, transferPair, accountIdToPaymentCategoryId);
     if (classification.type === "purchase") {
       purchasesBySourceCategory.set(

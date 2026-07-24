@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { computeDerived, computePaymentCategoryBreakdown, buildPaymentCategoryDraft, computeOverspendCoverage, computeQuickBudgetAllocations, transferLabel } from "./budget";
 import type { BudgetInputs } from "./budget";
 import { addMonths } from "./format";
-import type { Account, BudgetEntry, Category, Transaction } from "@/generated/prisma-postgres/client";
+import type { Account, BudgetEntry, Category, Transaction, TransactionSplit } from "@/generated/prisma-postgres/client";
 
 const MONTH = "2026-07";
 
@@ -46,7 +46,7 @@ function budgetEntry(
 // Base fixture: a checking account, an on-budget credit card with its linked payment category,
 // and one ordinary spending category — mirrors the shape a real addAccount + backfill would
 // produce (see accounts/actions.ts and the payment_categories migration).
-function baseInputs(transactions: Transaction[] = [], budgetEntries: BudgetEntry[] = []): BudgetInputs {
+function baseInputs(transactions: Transaction[] = [], budgetEntries: BudgetEntry[] = [], splits: TransactionSplit[] = []): BudgetInputs {
   return {
     accounts: [account({ id: "a_check", name: "Checking", type: "CHECKING" }), account({ id: "a_card", name: "Visa", type: "CREDIT" })],
     categories: [
@@ -56,6 +56,7 @@ function baseInputs(transactions: Transaction[] = [], budgetEntries: BudgetEntry
     ],
     transactions,
     budgetEntries,
+    splits,
   };
 }
 
@@ -239,6 +240,7 @@ describe("payment category transparency breakdown", () => {
         txn({ id: "t2", accountId: "a_cardB", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: 10000, transferId: "xfer1" }),
       ],
       budgetEntries: [],
+      splits: [],
     };
 
     const result = computePaymentCategoryBreakdown(inputs, "c_payA", MONTH)!;
@@ -295,6 +297,7 @@ describe("card-to-card balance transfers", () => {
         txn({ id: "t2", accountId: "a_cardB", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: transferAmountCents, transferId: "xfer1" }),
       ],
       budgetEntries: [],
+      splits: [],
     };
     return inputs;
   }
@@ -334,6 +337,7 @@ describe("card-to-card balance transfers", () => {
         txn({ id: "t2", accountId: "a_check2", date: `${MONTH}-05`, kind: "TRANSFER", amountCents: 5000, transferId: "xfer1" }),
       ],
       budgetEntries: [],
+      splits: [],
     };
     const derived = computeDerived(inputs, MONTH);
     // Not a card-to-card transfer (checking isn't a linked card) — behavior is unchanged from
@@ -523,6 +527,7 @@ describe("computeQuickBudgetAllocations", () => {
         budgetEntry({ id: "b1", categoryId: "c_hidden", yearMonth: m1, amountCents: 30000 }),
         budgetEntry({ id: "b2", categoryId: "c_pay", yearMonth: m1, amountCents: 30000 }),
       ],
+      splits: [],
     };
     expect(computeQuickBudgetAllocations(inputs, MONTH)).toEqual([]);
   });
@@ -545,6 +550,7 @@ describe("off-budget (tracking) accounts", () => {
         txn({ id: "t_off_groc", accountId: "a_inv", date: `${MONTH}-05`, amountCents: -3000, kind: "NORMAL", categoryId: "c_groc" }),
       ],
       budgetEntries: [],
+      splits: [],
     };
     const d = computeDerived(inputs, MONTH);
     expect(d.netWorth).toBe(500000 + 5000000 - 24000000 - 3000); // every account's balance
@@ -559,6 +565,7 @@ describe("off-budget (tracking) accounts", () => {
       categories: [category({ id: "c_groc", groupId: "g1", name: "Groceries" })],
       transactions: [txn({ id: "t1", accountId: "a_check", date: `${MONTH}-05`, amountCents: -3000, kind: "NORMAL", categoryId: "c_groc" })],
       budgetEntries: [],
+      splits: [],
     };
     expect(computeDerived(inputs, MONTH).activityIn("c_groc", MONTH)).toBe(-3000);
   });
@@ -602,5 +609,122 @@ describe("the reconciliation identity: netWorth === readyToAssign + Σ available
     inputs.transactions.push(txn({ id: "r1", accountId: "a_rrsp", date: `${MONTH}-02`, kind: "INCOME", amountCents: 2000000 }));
     const d = computeDerived(inputs, MONTH);
     expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth - d.acctBalance["a_rrsp"]);
+  });
+});
+
+// Split transactions: one register row fanned out across multiple category lines (or an RTA line
+// for the income part of a deposit). The parent stays NORMAL/categoryId-null; attribution is
+// per-line. See TransactionSplit in the schema and validateSplitDraft in splits.ts (the write-side
+// rules, tested in splits.test.ts) — these tests cover the ENGINE's read-side math.
+describe("split transactions", () => {
+  const split = (
+    overrides: Partial<TransactionSplit> & Pick<TransactionSplit, "id" | "transactionId" | "amountCents"> & { categoryId: string | null }
+  ): TransactionSplit => ({ memo: "", createdAt: new Date(), updatedAt: new Date(), ...overrides }) as TransactionSplit;
+
+  it("fans a checking split out to each line's category and preserves the reconciliation identity", () => {
+    const parent = txn({ id: "t1", accountId: "a_check", date: `${MONTH}-05`, kind: "NORMAL", categoryId: null, amountCents: -8000 });
+    const lines = [
+      split({ id: "s1", transactionId: "t1", categoryId: "c_groc", amountCents: -5000 }),
+      split({ id: "s2", transactionId: "t1", categoryId: "c_dine", amountCents: -3000 }),
+    ];
+    const before = computeDerived(baseInputs(), MONTH);
+    const inputs = baseInputs([parent], [], lines);
+    const after = computeDerived(inputs, MONTH);
+
+    expect(after.activityIn("c_groc", MONTH)).toBe(-5000);
+    expect(after.activityIn("c_dine", MONTH)).toBe(-3000);
+    expect(after.netWorth).toBe(before.netWorth - 8000);
+    expect(after.readyToAssign).toBe(before.readyToAssign); // splits assign nothing by themselves
+    expect(after.readyToAssign + totalAvailable(inputs, MONTH)).toBe(after.netWorth);
+  });
+
+  it("a split CARD purchase feeds the payment category per line and keeps the breakdown invariant", () => {
+    const parent = txn({ id: "t1", accountId: "a_card", date: `${MONTH}-05`, kind: "NORMAL", categoryId: null, amountCents: -8000 });
+    const lines = [
+      split({ id: "s1", transactionId: "t1", categoryId: "c_groc", amountCents: -5000 }),
+      split({ id: "s2", transactionId: "t1", categoryId: "c_dine", amountCents: -3000 }),
+    ];
+    const inputs = baseInputs([parent], [], lines);
+    const d = computeDerived(inputs, MONTH);
+
+    // Spending categories go down per line; the payment category rises by the FULL parent amount.
+    expect(d.activityIn("c_groc", MONTH)).toBe(-5000);
+    expect(d.activityIn("c_dine", MONTH)).toBe(-3000);
+    expect(d.activityIn("c_pay", MONTH)).toBe(8000);
+    // Net zero across categories: budgeted money just moved into "pay the card" (invariant 4).
+    // (The netWorth identity intentionally isn't asserted here — it never holds while a card
+    // carries UNPAID debt, split or not: the payment category's positive available has no cash
+    // counterpart until the payment transfer. It holds against net worth excluding the card:)
+    expect(totalAvailable(inputs, MONTH)).toBe(totalAvailable(baseInputs(), MONTH));
+    expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth - d.acctBalance["a_card"]);
+
+    // Transparency path takes the identical per-line branch (shared cardPurchaseContributions):
+    const result = computePaymentCategoryBreakdown(inputs, "c_pay", MONTH)!;
+    expect(result.breakdown).toHaveLength(2);
+    expect(result.breakdown).toEqual(
+      expect.arrayContaining([
+        { sourceCategoryId: "c_groc", amount: 5000 },
+        { sourceCategoryId: "c_dine", amount: 3000 },
+      ])
+    );
+    const breakdownSum = result.breakdown.reduce((s, b) => s + b.amount, 0);
+    const paymentsSum = result.payments.reduce((s, p) => s + p.amount, 0);
+    expect(breakdownSum - paymentsSum).toBe(d.activityIn("c_pay", MONTH));
+  });
+
+  it("a split deposit's RTA line feeds totalIncome/readyToAssign; its categorized line is activity", () => {
+    const parent = txn({ id: "t1", accountId: "a_check", date: `${MONTH}-02`, kind: "NORMAL", categoryId: null, amountCents: 210000 });
+    const lines = [
+      split({ id: "s1", transactionId: "t1", categoryId: null, amountCents: 200000 }), // paycheck part
+      split({ id: "s2", transactionId: "t1", categoryId: "c_groc", amountCents: 10000 }), // refund part
+    ];
+    const inputs = baseInputs([parent], [], lines);
+    const d = computeDerived(inputs, MONTH);
+
+    expect(d.totalIncome).toBe(200000);
+    expect(d.readyToAssign).toBe(200000);
+    expect(d.activityIn("c_groc", MONTH)).toBe(10000);
+    expect(d.acctBalance["a_check"]).toBe(210000);
+    expect(d.readyToAssign + totalAvailable(inputs, MONTH)).toBe(d.netWorth);
+  });
+
+  it("a pending split parent is invisible to activity AND income but counts in balances", () => {
+    const parent = txn({ id: "t1", accountId: "a_check", date: `${MONTH}-05`, kind: "NORMAL", categoryId: null, amountCents: 210000, pending: true });
+    const lines = [
+      split({ id: "s1", transactionId: "t1", categoryId: null, amountCents: 200000 }),
+      split({ id: "s2", transactionId: "t1", categoryId: "c_groc", amountCents: 10000 }),
+    ];
+    const d = computeDerived(baseInputs([parent], [], lines), MONTH);
+
+    expect(d.activityIn("c_groc", MONTH)).toBe(0);
+    expect(d.totalIncome).toBe(0);
+    expect(d.readyToAssign).toBe(0);
+    expect(d.acctBalance["a_check"]).toBe(210000); // money moved in real life
+  });
+
+  it("lines whose parent isn't in transactions (soft-deleted) contribute nothing", () => {
+    const lines = [
+      split({ id: "s1", transactionId: "t_gone", categoryId: "c_groc", amountCents: -5000 }),
+      split({ id: "s2", transactionId: "t_gone", categoryId: null, amountCents: 100000 }),
+    ];
+    const d = computeDerived(baseInputs([], [], lines), MONTH);
+    expect(d.activityIn("c_groc", MONTH)).toBe(0);
+    expect(d.totalIncome).toBe(0);
+  });
+
+  it("split lines on an off-budget account are excluded like everything else there", () => {
+    const inputs = baseInputs(
+      [txn({ id: "t1", accountId: "a_inv", date: `${MONTH}-02`, kind: "NORMAL", categoryId: null, amountCents: 210000 })],
+      [],
+      [
+        split({ id: "s1", transactionId: "t1", categoryId: null, amountCents: 200000 }),
+        split({ id: "s2", transactionId: "t1", categoryId: "c_groc", amountCents: 10000 }),
+      ]
+    );
+    inputs.accounts.push(account({ id: "a_inv", name: "401k", type: "INVESTMENT", onBudget: false }));
+    const d = computeDerived(inputs, MONTH);
+    expect(d.totalIncome).toBe(0);
+    expect(d.activityIn("c_groc", MONTH)).toBe(0);
+    expect(d.netWorth).toBe(210000); // balance still counts toward net worth
   });
 });

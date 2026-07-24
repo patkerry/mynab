@@ -90,6 +90,11 @@
   border-bottom: 1px solid var(--line);
   font-size: 13.5px;
 }
+/* Split-line sub-rows reuse .txnRow (and the approved/pending classes) wholesale — the ONLY
+   visual difference from a normal register row is the indented category cell. */
+.splitSubCat {
+  padding-left: 18px;
+}
 /* Approved (non-pending) rows get a clean white fill so they read as clearly "done" against the
    warm-tinted pending rows (.txn-pending). Applied only to non-pending rows in AccountsView. */
 .approved {

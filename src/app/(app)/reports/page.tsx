@@ -4,6 +4,7 @@ import { ReportsView } from "@/components/ReportsView";
 import {
   RANGES,
   monthsForRange,
+  expandSplits,
   summary,
   spendByCategory,
   incomeVsSpending,
@@ -22,12 +23,17 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { range: rangeParam } = await searchParams;
   const range: ReportRange = (RANGES.some((r) => r.key === rangeParam) ? rangeParam : "6m") as ReportRange;
   const months = monthsForRange(range, curYM());
-  const { transactions, categories, budgetEntries, accounts } = await getReportsData();
+  const { transactions, categories, budgetEntries, accounts, splits } = await getReportsData();
 
   // Off-budget (Investment/Loan) accounts belong in net worth but not in spending/income — feed the
-  // budget-facing reports only on-budget transactions; net worth sees everything.
+  // budget-facing reports only on-budget transactions; net worth sees everything. Split parents fan
+  // out into per-line pseudo-rows (expandSplits) so per-category reports see each line; netWorthTrend
+  // keeps the ORIGINAL rows — it's balance math over parent amounts, no fan-out needed.
   const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
-  const onBudgetTxns = transactions.filter((t) => !offBudget.has(t.accountId));
+  const onBudgetTxns = expandSplits(
+    transactions.filter((t) => !offBudget.has(t.accountId)),
+    splits
+  );
 
   return (
     <ReportsView

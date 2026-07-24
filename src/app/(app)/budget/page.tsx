@@ -5,7 +5,7 @@ import { BudgetView } from "@/components/BudgetView";
 export default async function BudgetPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const params = await searchParams;
   const month = params.month || curYM();
-  const { groups, categories, accounts, transactions, budgetEntries } = await getBudgetPageData();
+  const { groups, categories, accounts, transactions, budgetEntries, splits } = await getBudgetPageData();
 
   return (
     <BudgetView
@@ -15,6 +15,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
       accounts={accounts}
       transactions={transactions}
       budgetEntries={budgetEntries}
+      splits={splits}
     />
   );
 }
