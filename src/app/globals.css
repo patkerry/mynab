@@ -168,7 +168,9 @@ textarea::placeholder {
   box-shadow: inset 3px 0 0 var(--warn);
 }
 .txn-pending:hover {
-  background: #f7ebd0;
+  /* Deepen the warn tint slightly toward the warn accent — adapts in both themes and stays legible
+     (mixing toward the mid-amber --warn, never toward the text color). */
+  background: color-mix(in srgb, var(--warnSoft) 82%, var(--warn) 18%);
 }
 .cat-name:hover {
   color: var(--accent) !important;
@@ -189,7 +191,7 @@ textarea::placeholder {
   text-align: left;
 }
 .navlink:hover {
-  background: #eef1f7;
+  background: var(--paper);
   color: var(--ink);
 }
 .navlink.active {
