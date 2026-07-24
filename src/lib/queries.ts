@@ -84,9 +84,12 @@ export async function getAccountTransactions(filters: { accountId: AccountFilter
   const skip = (filters.page - 1) * pageSize;
 
   const [transactions, totalCount, clearedAgg, unclearedAgg, pendingCount, accounts, categories, lastReconciliation] = await Promise.all([
-    // A stable tiebreaker (createdAt) is required alongside date — many rows share a date, and
-    // without one, pagination across requests wouldn't be deterministic.
-    prisma.transaction.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], skip, take: pageSize }),
+    // Order needs a TOTALLY deterministic tiebreaker. date alone ties constantly; even
+    // date+createdAt ties for imported rows (a whole file's rows share one createMany timestamp),
+    // and Postgres then returns tied rows in arbitrary heap order — which shifts after any update,
+    // so approving/editing a row made the register visibly reshuffle. `id` (unique, immutable) as
+    // the final key makes the sort stable across refreshes and pagination.
+    prisma.transaction.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }], skip, take: pageSize }),
     prisma.transaction.count({ where }),
     // Cleared/uncleared/pending totals must reflect the FULL filtered set, not just the current
     // page — computed here as separate aggregate-only queries (cheap, no row materialization)
