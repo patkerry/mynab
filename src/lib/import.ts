@@ -51,10 +51,12 @@ function parseCsvImport(csvText: string): { rows: ImportRow[]; skipped: number }
 }
 
 // Generic CSV or QFX/OFX (Quicken) import — format is detected from the file's own content
-// (see isQfx in src/lib/qfx.ts), not its extension. Every row lands as pending: uncategorized,
-// unapproved, and uncleared, but its amount is already reflected in the account's balance (see
-// the `pending` field's doc comment in schema.prisma). A user reviews and approves each one
-// individually by opening and saving it in the register — the same edit flow every other
+// (see isQfx in src/lib/qfx.ts), not its extension. Every row lands as pending (uncategorized,
+// unapproved) but ALREADY CLEARED: a bank/card export is a record of settled transactions (every
+// OFX <STMTTRN> carries a <DTPOSTED> date and there's no pending flag in the format), so marking
+// them cleared on import is accurate and saves hand-clearing each one. The amount is reflected in
+// the account balance immediately. A user reviews and approves each one (categorizes it) by opening
+// and saving it in the register — the same edit flow every other
 // transaction uses (see updateTransaction).
 //
 // QFX rows carry the bank's own FITID as externalId; CSV rows carry a synthesized content
@@ -143,7 +145,9 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
           kind: "NORMAL" as const,
           categoryId,
           amountCents: r.amountCents,
-          cleared: false,
+          // Cleared on import: an export only contains transactions that already posted (see the
+          // doc comment above). Manual entries still start uncleared.
+          cleared: true,
           pending: true,
           externalId: r.externalId,
           importBatchId,
