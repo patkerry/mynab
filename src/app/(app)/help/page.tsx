@@ -23,9 +23,10 @@ export default function HelpPage() {
     <div className={styles.page}>
       <div>
         <h2 className={styles.h2}>How to use Assign</h2>
-        <div className={styles.desc}>Five minutes on the idea behind it, then answers by task.</div>
+        <div className={styles.desc}>The idea on the left; answers by task on the right.</div>
       </div>
 
+      <div className={styles.columns}>
       <div className={styles.prose}>
         <p>
           Assign is a zero-based budgeting app. The method is simple, but it isn&rsquo;t what most people mean
@@ -33,7 +34,7 @@ export default function HelpPage() {
           wrong even when they aren&rsquo;t. So it&rsquo;s worth a few minutes before you start clicking around.
         </p>
 
-        <h3 className={styles.part}>Part 1 — The idea</h3>
+        <h3 className={styles.part}>The idea</h3>
 
         <div className={styles.thesis}>
           You don&rsquo;t plan future spending out of money you expect. You decide what the money you already
@@ -107,13 +108,19 @@ export default function HelpPage() {
           of the arithmetic.
         </p>
 
-        <h3 className={styles.part}>Part 2 — How do I…?</h3>
+      </div>
+
+      {/* The wiki as a sticky right rail: visible from the first screenful — it was easy to miss
+          when it sat below the (long) philosophy prose. Stacks ABOVE the prose on narrow windows,
+          since it's what most visitors come back for. */}
+      <aside className={styles.howBox} aria-label="How do I…?">
+        <h3 className={styles.howTitle}>How do I…?</h3>
 
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder='Search — try "paycheck", "split", "credit card", "wrong"…'
+          placeholder='Search — try "paycheck", "split", "wrong"…'
           aria-label="Search the how-do-I list"
           className={styles.searchBox}
         />
@@ -137,6 +144,7 @@ export default function HelpPage() {
             </details>
           ))}
         </div>
+      </aside>
       </div>
     </div>
   );
