@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, CheckCheck, Trash2, ScrollText, Upload, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, Check, CheckCheck, Trash2, ScrollText, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
-import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate } from "@/app/(app)/accounts/actions";
+import { toggleCleared, deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
@@ -26,6 +26,7 @@ export function AccountsView({
   accountFilter,
   categoryFilter,
   lastReconciliation,
+  lastImportBatch,
 }: {
   transactions: Transaction[];
   totalCount: number;
@@ -39,6 +40,7 @@ export function AccountsView({
   accountFilter: string;
   categoryFilter: string;
   lastReconciliation: Reconciliation | null;
+  lastImportBatch: { id: string; count: number } | null;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -68,6 +70,15 @@ export function AccountsView({
   const approveRow = async (id: string) => {
     const { approved } = await approvePending([id]);
     showToast(approved > 0 ? "Approved 1 transaction" : "Nothing to approve", approved > 0 ? "success" : "error");
+  };
+
+  // Undo the most recent import — removes the un-reviewed rows it added (see undoImport).
+  const undoLastImport = async () => {
+    if (!lastImportBatch) return;
+    const n = lastImportBatch.count;
+    if (!window.confirm(`Undo the last import? This permanently removes the ${n} un-reviewed transaction${n === 1 ? "" : "s"} it added.`)) return;
+    const { removed } = await undoImport(lastImportBatch.id);
+    showToast(removed > 0 ? `Removed ${removed} imported transaction${removed === 1 ? "" : "s"}` : "Nothing to undo", removed > 0 ? "success" : "error");
   };
 
   // "—" covers both uncategorized outflows and transfer legs, matching the original app's
@@ -191,6 +202,11 @@ export function AccountsView({
           {accountFilter !== "all" && (
             <button className="btn btn-ghost" onClick={handleReconcile}>
               <ScrollText size={15} /> Reconcile
+            </button>
+          )}
+          {lastImportBatch && (
+            <button className="btn btn-ghost" onClick={undoLastImport} title="Remove the un-reviewed transactions added by the most recent import">
+              <Undo2 size={15} /> Undo import ({lastImportBatch.count})
             </button>
           )}
           <button

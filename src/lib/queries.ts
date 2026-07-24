@@ -129,3 +129,19 @@ export async function getReportsData() {
   ]);
   return { transactions, categories, budgetEntries, accounts };
 }
+
+// The most recent file-import batch that still has un-reviewed (pending) rows — powers the
+// "Undo last import" button. Returns null once every row in the batch has been approved or removed.
+export async function getLastImportBatch(): Promise<{ id: string; count: number } | null> {
+  const budgetId = await getActiveBudgetId();
+  const recent = await prisma.transaction.findFirst({
+    where: { budgetId, importBatchId: { not: null }, pending: true, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { importBatchId: true },
+  });
+  if (!recent?.importBatchId) return null;
+  const count = await prisma.transaction.count({
+    where: { budgetId, importBatchId: recent.importBatchId, pending: true, deletedAt: null },
+  });
+  return count > 0 ? { id: recent.importBatchId, count } : null;
+}

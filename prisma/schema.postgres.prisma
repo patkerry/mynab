@@ -227,6 +227,9 @@ model Transaction {
   // row's externalId occupied so a later overlapping QFX import can't silently resurrect
   // something the user deliberately removed. Every read path filters deletedAt: null.
   deletedAt            DateTime?
+  // Groups every row created by one file import so the whole batch can be undone (see runImport in
+  // src/lib/import.ts and undoImport in accounts/actions.ts). Null for manual entries / transfers.
+  importBatchId        String?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   reconciliation       Reconciliation? // set if this transaction is the adjustment a reconciliation produced
@@ -237,6 +240,7 @@ model Transaction {
   @@index([categoryId, date])
   @@index([kind])
   @@index([transferId])
+  @@index([importBatchId])
   @@map("transactions")
 }
 

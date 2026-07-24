@@ -495,3 +495,17 @@ export async function importTransactions(accountId: string, fileText: string): P
   if (result.ok) revalidateAll();
   return result;
 }
+
+// Undo an import: hard-delete the still-pending rows created by one import batch (see importBatchId
+// in src/lib/import.ts). Unlike deleteTransaction's soft delete, this genuinely removes them — undo
+// means "that import was a mistake," so it also frees their externalIds for a clean re-import. Only
+// pending rows are touched: anything the user already reviewed/approved from the batch is deliberate
+// and left intact. Scoped to the active budget.
+export async function undoImport(batchId: string): Promise<{ removed: number }> {
+  const { budgetId } = await requireBudget("write");
+  const res = await prisma.transaction.deleteMany({
+    where: { budgetId, importBatchId: batchId, pending: true },
+  });
+  revalidateAll();
+  return { removed: res.count };
+}

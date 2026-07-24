@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { parseMoney } from "@/lib/format";
+import { parseMoney, uid } from "@/lib/format";
 import { parseCsv, normalizeDate, csvFingerprint } from "@/lib/csv";
 import { isQfx, parseQfx } from "@/lib/qfx";
 import { buildHistoryMap, guessCategoryId, KNOWN_MERCHANTS } from "@/lib/merchant";
@@ -121,6 +121,10 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
   const seed = KNOWN_MERCHANTS.map((k) => ({ match: k.match, categoryId: idByName.get(k.category.toLowerCase()) }))
     .filter((s): s is { match: string; categoryId: string } => Boolean(s.categoryId));
 
+  // One id shared by every row of this import, so "undo import" can remove the whole batch at once
+  // (see undoImport in accounts/actions.ts).
+  const importBatchId = uid("imp");
+
   const CHUNK = 500;
   let importedCount = 0;
   let guessedCount = 0;
@@ -142,6 +146,7 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
           cleared: false,
           pending: true,
           externalId: r.externalId,
+          importBatchId,
         };
       }),
     });

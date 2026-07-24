@@ -1,4 +1,4 @@
-import { getAccountTransactions } from "@/lib/queries";
+import { getAccountTransactions, getLastImportBatch } from "@/lib/queries";
 import { AccountsView } from "@/components/AccountsView";
 
 export default async function AccountsPage({
@@ -21,6 +21,7 @@ export default async function AccountsPage({
     categories,
     lastReconciliation,
   } = await getAccountTransactions({ accountId: accountFilter, categoryId: categoryFilter, page });
+  const lastImportBatch = await getLastImportBatch();
 
   return (
     <AccountsView
@@ -36,6 +37,7 @@ export default async function AccountsPage({
       accountFilter={accountFilter}
       categoryFilter={categoryFilter}
       lastReconciliation={lastReconciliation}
+      lastImportBatch={lastImportBatch}
     />
   );
 }
