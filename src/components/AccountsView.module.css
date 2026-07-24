@@ -95,6 +95,12 @@
 .approved {
   background: var(--field);
 }
+/* Keep an approved row clearly light on hover — the global .row-hover:hover cream would otherwise
+   paint it while the mouse is still on the just-approved row, masking the tan->white change until
+   the pointer leaves. Two classes (.txnRow.approved) out-specify the global single-class hover. */
+.txnRow.approved:hover {
+  background: color-mix(in srgb, var(--field) 92%, var(--ink) 8%);
+}
 .dateCell {
   display: flex;
   align-items: center;

@@ -136,6 +136,7 @@ export function AccountsView({
       if (!proceed) return false;
     }
     const ok = await addTransaction(draft);
+    if (ok) showToast("Transaction added", "success");
     // A newly-added transaction is almost always recent, so with the newest-first sort it would
     // otherwise be invisible if the user is deep in an older page.
     if (ok && page !== 1) goToPage(1);
@@ -275,8 +276,12 @@ export function AccountsView({
                 saveLabel={t.pending ? "Approve" : "Save"}
                 initial={txnToDraft(t)}
                 onSubmit={async (draft) => {
+                  const wasPending = t.pending;
                   const ok = await updateTransaction(t.id, draft);
-                  if (ok) router.refresh();
+                  if (ok) {
+                    showToast(wasPending ? "Approved" : "Saved", "success");
+                    router.refresh();
+                  }
                   return ok;
                 }}
                 onClose={() => setEditingId(null)}
