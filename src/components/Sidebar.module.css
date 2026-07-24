@@ -1,0 +1,90 @@
+.aside {
+  width: 268px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+.logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.title {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+.subtitle {
+  font-size: 10px;
+  color: var(--ink3);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-top: -1px;
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.acctList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.allAccounts {
+  justify-content: space-between;
+  padding: 6px 6px;
+  margin-bottom: 2px;
+}
+.allBalance {
+  font-size: 12px;
+  font-weight: 700;
+}
+.acctLink {
+  gap: 9px;
+  padding: 8px 8px;
+  font-weight: 600;
+}
+.acctName {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.acctBalance {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.addBtn {
+  color: var(--accent);
+  font-size: 13px;
+  margin-top: 2px;
+}
+.centerBtn {
+  justify-content: center;
+}
+.fullBtn {
+  justify-content: center;
+  width: 100%;
+}

@@ -1,0 +1,168 @@
+.page {
+  padding: 18px 26px 40px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.select {
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-weight: 600;
+}
+.selectActive {
+  border-color: var(--accent);
+}
+.clearBtn {
+  padding: 8px 11px;
+}
+.stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12.5px;
+}
+.statLabel {
+  color: var(--ink2);
+}
+.statVal {
+  color: var(--ink);
+}
+.pendingNote {
+  color: var(--warn);
+  font-weight: 600;
+}
+.muted3 {
+  color: var(--ink3);
+}
+.muted2 {
+  color: var(--ink2);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.tableCard {
+  overflow: hidden;
+}
+.headerRow {
+  display: grid;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.dateHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.checkbox {
+  cursor: pointer;
+}
+.right {
+  text-align: right;
+}
+.empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--ink3);
+  font-size: 14px;
+}
+.txnRow {
+  display: grid;
+  gap: 8px;
+  padding: 11px 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.dateCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.payeeCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.payeeText {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reviewPill {
+  color: var(--warn);
+  background: var(--warnSoft);
+  font-size: 10px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.cellMuted2 {
+  color: var(--ink2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.memoCell {
+  color: var(--ink3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.amountCell {
+  text-align: right;
+  font-weight: 600;
+}
+.rowActions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.clearToggle {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.iconBtn {
+  color: var(--ink3);
+  display: grid;
+  place-items: center;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.pageNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pageBtn {
+  padding: 6px 10px;
+}

@@ -11,6 +11,7 @@ import { useModal } from "./modal/ModalContext";
 import { useToast } from "./toast/ToastContext";
 import type { Account, Category, Reconciliation, Transaction } from "@/generated/prisma-postgres/client";
 import type { TxnDraft } from "@/lib/types";
+import styles from "./AccountsView.module.css";
 
 export function AccountsView({
   transactions,
@@ -123,13 +124,13 @@ export function AccountsView({
   };
 
   return (
-    <div style={{ padding: "18px 26px 40px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+    <div className={styles.page}>
+      <div className={styles.toolbar}>
+        <div className={styles.filters}>
           <select
             value={accountFilter}
             onChange={(e) => setFilters({ account: e.target.value })}
-            style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${accountFilter !== "all" ? "var(--accent)" : "var(--line)"}`, background: "#fff", fontWeight: 600 }}
+            className={`${styles.select} ${accountFilter !== "all" ? styles.selectActive : ""}`}
           >
             <option value="all">All accounts</option>
             {accounts.map((a) => (
@@ -141,7 +142,7 @@ export function AccountsView({
           <select
             value={categoryFilter}
             onChange={(e) => setFilters({ category: e.target.value })}
-            style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${categoryFilter !== "all" ? "var(--accent)" : "var(--line)"}`, background: "#fff", fontWeight: 600 }}
+            className={`${styles.select} ${categoryFilter !== "all" ? styles.selectActive : ""}`}
           >
             <option value="all">All categories</option>
             <option value="income">Ready to Assign</option>
@@ -156,31 +157,27 @@ export function AccountsView({
             </optgroup>
           </select>
           {(accountFilter !== "all" || categoryFilter !== "all") && (
-            <button className="btn btn-ghost" style={{ padding: "8px 11px" }} onClick={() => setFilters({ account: "all", category: "all" })}>
+            <button className={`btn btn-ghost ${styles.clearBtn}`} onClick={() => setFilters({ account: "all", category: "all" })}>
               <X size={14} /> Clear
             </button>
           )}
-          <div style={{ display: "flex", gap: 16, fontSize: 12.5 }}>
-            <span style={{ color: "var(--ink2)" }}>
+          <div className={styles.stats}>
+            <span className={styles.statLabel}>
               Balance <b className="num" style={{ color: clearedCents + unclearedCents < 0 ? "var(--neg)" : "var(--ink)" }}>{fmt(clearedCents + unclearedCents)}</b>
             </span>
-            <span style={{ color: "var(--ink2)" }}>
-              Cleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(clearedCents)}</b>
+            <span className={styles.statLabel}>
+              Cleared <b className={`num ${styles.statVal}`}>{fmt(clearedCents)}</b>
             </span>
-            <span style={{ color: "var(--ink2)" }}>
-              Uncleared <b className="num" style={{ color: "var(--ink)" }}>{fmt(unclearedCents)}</b>
+            <span className={styles.statLabel}>
+              Uncleared <b className={`num ${styles.statVal}`}>{fmt(unclearedCents)}</b>
             </span>
-            {pendingCount > 0 && (
-              <span style={{ color: "var(--warn)", fontWeight: 600 }}>
-                {pendingCount} pending — needs approval
-              </span>
-            )}
+            {pendingCount > 0 && <span className={styles.pendingNote}>{pendingCount} pending — needs approval</span>}
             {accountFilter !== "all" && (
-              <span style={{ color: "var(--ink3)" }}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
+              <span className={styles.muted3}>{lastReconciliation ? `Last reconciled ${dateLabel(lastReconciliation.date)}` : "Never reconciled"}</span>
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.actions}>
           {selected.size > 0 && (
             <button className="btn btn-primary" onClick={approveSelected}>
               <CheckCheck size={15} /> Approve selected ({selected.size})
@@ -211,16 +208,16 @@ export function AccountsView({
         </div>
       </div>
 
-      <div className="card" style={{ overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: TXN_GRID, gap: 8, padding: "10px 16px", borderBottom: "1px solid var(--line)", background: "var(--paper)" }}>
-          <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={`card ${styles.tableCard}`}>
+        <div className={styles.headerRow} style={{ gridTemplateColumns: TXN_GRID }}>
+          <span className={`eyebrow ${styles.dateHead}`}>
             {approvableIds.length > 0 && (
-              <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Select all reviewable" style={{ cursor: "pointer" }} />
+              <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Select all reviewable" className={styles.checkbox} />
             )}
             Date
           </span>
           {["Payee", "Category", "Memo", "Account", "Amount", ""].map((h) => (
-            <span key={h || "actions"} className="eyebrow" style={{ textAlign: h === "Amount" ? "right" : "left" }}>
+            <span key={h || "actions"} className={`eyebrow ${h === "Amount" ? styles.right : ""}`}>
               {h}
             </span>
           ))}
@@ -243,7 +240,7 @@ export function AccountsView({
           />
         )}
         {transactions.length === 0 && !adding && (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--ink3)", fontSize: 14 }}>
+          <div className={styles.empty}>
             {accountFilter !== "all" || categoryFilter !== "all" ? "No transactions match this filter." : "No transactions yet. Add one to get started."}
           </div>
         )}
@@ -265,7 +262,7 @@ export function AccountsView({
           return (
             <div
               key={t.id}
-              className={t.pending ? "row-hover txn-pending" : "row-hover"}
+              className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow}`}
               onClick={() => {
                 if (!transfer) {
                   setEditingId(t.id);
@@ -273,18 +270,9 @@ export function AccountsView({
                 }
               }}
               title={transfer ? "Transfers can't be edited inline — delete to remove both legs" : "Click to edit"}
-              style={{
-                display: "grid",
-                gridTemplateColumns: TXN_GRID,
-                gap: 8,
-                padding: "11px 16px",
-                alignItems: "center",
-                borderBottom: "1px solid var(--line)",
-                fontSize: 13.5,
-                cursor: transfer ? "default" : "pointer",
-              }}
+              style={{ gridTemplateColumns: TXN_GRID, cursor: transfer ? "default" : "pointer" }}
             >
-              <span className="num" style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
+              <span className={`num ${styles.dateCell}`}>
                 {approvable(t) && (
                   <input
                     type="checkbox"
@@ -292,28 +280,28 @@ export function AccountsView({
                     onClick={(e) => e.stopPropagation()}
                     onChange={() => toggleSel(t.id)}
                     title="Select for approval"
-                    style={{ cursor: "pointer" }}
+                    className={styles.checkbox}
                   />
                 )}
                 {dateLabel(t.date)}
               </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{transfer ? transferLabel(t, accounts) : t.payee}</span>
+              <span className={styles.payeeCell}>
+                <span className={styles.payeeText}>{transfer ? transferLabel(t, accounts) : t.payee}</span>
                 {t.pending && (
-                  <span className="pill" style={{ color: "var(--warn)", background: "var(--warnSoft)", fontSize: 10, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }} title="Imported, not yet approved — click to review, add a category, and save to approve">
+                  <span className={`pill ${styles.reviewPill}`} title="Imported, not yet approved — click to review, add a category, and save to approve">
                     Needs review
                   </span>
                 )}
               </span>
-              <span style={{ color: "var(--ink2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{catName(t)}</span>
-              <span style={{ color: "var(--ink3)", fontSize: 12.5, fontStyle: t.memo ? "italic" : "normal", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span className={styles.cellMuted2}>{catName(t)}</span>
+              <span className={styles.memoCell} style={{ fontStyle: t.memo ? "italic" : "normal" }}>
                 {t.memo || "—"}
               </span>
-              <span style={{ color: "var(--ink2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{acctName(t.accountId)}</span>
-              <span className="num" style={{ textAlign: "right", fontWeight: 600, color: t.amountCents < 0 ? "var(--ink)" : "var(--posInk)" }}>
+              <span className={styles.cellMuted2}>{acctName(t.accountId)}</span>
+              <span className={`num ${styles.amountCell}`} style={{ color: t.amountCents < 0 ? "var(--ink)" : "var(--posInk)" }}>
                 {fmt(t.amountCents)}
               </span>
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <div className={styles.rowActions}>
                 <button
                   title={t.pending ? "Approve this transaction before clearing" : t.cleared ? "Cleared" : "Mark cleared"}
                   onClick={async (e) => {
@@ -321,7 +309,8 @@ export function AccountsView({
                     const result = await toggleCleared(t.id);
                     if (!result.ok) showToast(result.reason);
                   }}
-                  style={{ width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center", background: t.cleared ? "var(--pos)" : "var(--line)", color: "#fff", opacity: t.pending ? 0.4 : 1 }}
+                  className={styles.clearToggle}
+                  style={{ background: t.cleared ? "var(--pos)" : "var(--line)", opacity: t.pending ? 0.4 : 1 }}
                 >
                   <Check size={13} strokeWidth={3} />
                 </button>
@@ -331,7 +320,7 @@ export function AccountsView({
                     e.stopPropagation();
                     deleteTransaction(t.id);
                   }}
-                  style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
+                  className={styles.iconBtn}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -342,18 +331,18 @@ export function AccountsView({
       </div>
 
       {totalCount > 0 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
-          <span style={{ color: "var(--ink3)" }}>
+        <div className={styles.pagination}>
+          <span className={styles.muted3}>
             Showing {Math.min((page - 1) * pageSize + 1, totalCount)}-{Math.min(page * pageSize, totalCount)} of {totalCount}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => goToPage(page - 1)} disabled={page <= 1}>
+          <div className={styles.pageNav}>
+            <button className={`btn btn-ghost ${styles.pageBtn}`} onClick={() => goToPage(page - 1)} disabled={page <= 1}>
               <ChevronLeft size={14} />
             </button>
-            <span style={{ color: "var(--ink2)" }}>
+            <span className={styles.muted2}>
               Page {page} of {totalPages}
             </span>
-            <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => goToPage(page + 1)} disabled={page >= totalPages}>
+            <button className={`btn btn-ghost ${styles.pageBtn}`} onClick={() => goToPage(page + 1)} disabled={page >= totalPages}>
               <ChevronRight size={14} />
             </button>
           </div>

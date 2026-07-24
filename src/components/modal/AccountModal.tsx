@@ -50,9 +50,7 @@ export function AccountModal({ close }: { close: () => void }) {
         <label>Current balance</label>
         <input value={bal} onChange={(e) => setBal(e.target.value)} placeholder="0.00" className="num" />
       </div>
-      <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
-        {BALANCE_HINT[type] ?? DEFAULT_HINT}
-      </p>
+      <p className="hint">{BALANCE_HINT[type] ?? DEFAULT_HINT}</p>
     </ModalShell>
   );
 }

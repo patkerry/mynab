@@ -7,6 +7,7 @@ import { fmt } from "@/lib/format";
 import { catColor } from "@/lib/viz-palette";
 import { RangePicker } from "./RangePicker";
 import type { ReportRange, Summary, CatSlice, TrendSeries, BudgetVsActualRow } from "@/lib/reports";
+import styles from "./ReportsView.module.css";
 
 const money = (v: number) => "$" + Math.round(v).toLocaleString();
 
@@ -37,24 +38,24 @@ export function ReportsView({
   const savingsPct = Math.round(summary.savingsRate * 100);
 
   return (
-    <div style={{ padding: "18px 26px 40px", display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
           <div className="eyebrow">Reports</div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: "2px 0 0" }}>Spending & trends</h2>
+          <h2 className={styles.h2}>Spending & trends</h2>
         </div>
         <RangePicker active={range} />
       </div>
 
       {/* KPI stat tiles */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }}>
+      <div className={styles.kpiGrid}>
         <Kpi label="Income" value={fmt(summary.incomeCents)} color="var(--posInk)" />
         <Kpi label="Spending" value={fmt(summary.spendingCents)} color="var(--negInk)" />
         <Kpi label="Net saved" value={fmt(summary.netCents)} color={summary.netCents < 0 ? "var(--negInk)" : "var(--posInk)"} />
         <Kpi label="Savings rate" value={`${savingsPct}%`} color={savingsPct < 0 ? "var(--negInk)" : "var(--ink)"} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16 }}>
+      <div className={styles.chartGrid}>
         <Card title="Spending by category" subtitle="Click a bar to see its transactions">
           {spendByCat.length === 0 ? (
             <Empty msg="No spending in this range." />
@@ -142,10 +143,10 @@ export function ReportsView({
           </ResponsiveContainer>
         </Card>
 
-        <div className="card" style={{ padding: "18px 20px", gridColumn: "1 / -1" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <div className={`card ${styles.wideCard}`}>
+          <div className={styles.cardHeadRow}>
             <TrendingUp size={16} color="var(--accent)" />
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Net worth trend</div>
+            <div className={styles.cardTitle}>Net worth trend</div>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={netWorth} margin={{ left: 4, right: 12 }}>
@@ -164,19 +165,19 @@ export function ReportsView({
 
 function Kpi({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
-      <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", color }}>{value}</div>
+    <div className={`card ${styles.kpiCard}`}>
+      <div className={`eyebrow ${styles.kpiLabel}`}>{label}</div>
+      <div className={`num ${styles.kpiValue}`} style={{ color }}>{value}</div>
     </div>
   );
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="card" style={{ padding: "18px 20px" }}>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 11.5, color: "var(--ink3)", marginTop: 2 }}>{subtitle}</div>}
+    <div className={`card ${styles.cardPad}`}>
+      <div className={styles.cardHead}>
+        <div className={styles.cardTitle}>{title}</div>
+        {subtitle && <div className={styles.cardSub}>{subtitle}</div>}
       </div>
       {children}
     </div>
@@ -184,5 +185,5 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <div style={{ padding: "36px 0", textAlign: "center", color: "var(--ink3)", fontSize: 13 }}>{msg}</div>;
+  return <div className={styles.empty}>{msg}</div>;
 }

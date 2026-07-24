@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import styles from "./ToastContext.module.css";
 
 type ToastTone = "success" | "error";
 type Toast = { id: number; message: string; tone: ToastTone };
@@ -30,22 +31,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 100 }}>
+      <div className={styles.wrap}>
         {toasts.map((t) => (
-          <div
-            key={t.id}
-            className="card"
-            style={{
-              padding: "12px 16px",
-              maxWidth: 320,
-              borderColor: t.tone === "success" ? "var(--pos)" : "var(--neg)",
-              background: t.tone === "success" ? "var(--posSoft)" : "var(--negSoft)",
-              color: t.tone === "success" ? "var(--posInk)" : "var(--negInk)",
-              fontSize: 13.5,
-              fontWeight: 600,
-              boxShadow: "0 8px 24px rgba(20,24,31,.18)",
-            }}
-          >
+          <div key={t.id} className={`card ${styles.toast} ${t.tone === "success" ? styles.success : styles.error}`}>
             {t.message}
           </div>
         ))}

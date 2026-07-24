@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getSidebarData } from "@/lib/queries";
 import { Sidebar } from "@/components/Sidebar";
+import styles from "./layout.module.css";
 
 // Layout for the authenticated app (Budget / Transactions / Reports / Admin): renders the sidebar
 // shell around the page. Public pages like /login live outside this group and get only the root
@@ -27,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <Sidebar accounts={accounts} acctBalance={acctBalance} netWorth={netWorth} isAdmin={isAdmin} showAuth={!isDesktop} showDemoReset={showDemoReset} />
       </Suspense>
-      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</main>
+      <main className={styles.main}>{children}</main>
     </div>
   );
 }

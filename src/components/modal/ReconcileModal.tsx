@@ -5,6 +5,8 @@ import { X } from "lucide-react";
 import { reconcileAccount } from "@/app/(app)/accounts/actions";
 import { fmt, parseMoney } from "@/lib/format";
 import { useToast } from "../toast/ToastContext";
+import m from "./modal.module.css";
+import styles from "./ReconcileModal.module.css";
 
 export function ReconcileModal({
   close,
@@ -40,30 +42,28 @@ export function ReconcileModal({
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>
-        <h3 style={{ fontWeight: 700, fontSize: 16 }}>Reconcile · {accountName}</h3>
-        <button onClick={close} style={{ color: "var(--ink3)" }}>
+      <div className={m.head}>
+        <h3 className={m.title}>Reconcile · {accountName}</h3>
+        <button onClick={close} className={m.close}>
           <X size={19} />
         </button>
       </div>
-      <div style={{ padding: "18px 20px" }}>
+      <div className={m.body}>
         <div className="field">
           <label>Tracked balance</label>
-          <div className="num" style={{ fontWeight: 700, fontSize: 15, padding: "6px 0" }}>
-            {fmt(currentBalanceCents)}
-          </div>
+          <div className={`num ${styles.balanceValue}`}>{fmt(currentBalanceCents)}</div>
         </div>
         <div className="field">
           <label>Actual statement balance</label>
           <input value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
-        <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
+        <p className="hint">
           {diffCents === 0
             ? "Matches — reconciling will just confirm the account, no adjustment needed."
             : `A ${fmt(Math.abs(diffCents))} adjustment transaction will be added to cover the difference.`}
         </p>
       </div>
-      <div style={{ display: "flex", gap: 10, padding: "0 20px 18px", justifyContent: "flex-end" }}>
+      <div className={m.footer}>
         <button className="btn btn-ghost" onClick={close}>
           Cancel
         </button>

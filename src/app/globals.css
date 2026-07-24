@@ -272,6 +272,12 @@ select {
   font-size: 12px;
   fill: var(--ink3);
 }
+/* Small explanatory footnote under a modal's fields. */
+.hint {
+  font-size: 12px;
+  color: var(--ink3);
+  margin: 0;
+}
 @media (max-width: 820px) {
   .ynab-root {
     flex-direction: column;

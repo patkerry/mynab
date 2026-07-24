@@ -1,0 +1,28 @@
+.wrap {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+}
+.toast {
+  padding: 12px 16px;
+  max-width: 320px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(20, 24, 31, 0.18);
+}
+.success {
+  border-color: var(--pos);
+  background: var(--posSoft);
+  color: var(--posInk);
+}
+.error {
+  border-color: var(--neg);
+  background: var(--negSoft);
+  color: var(--negInk);
+}

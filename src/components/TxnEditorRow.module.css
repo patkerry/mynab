@@ -1,0 +1,49 @@
+.row {
+  display: grid;
+  gap: 8px;
+  padding: 10px 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: var(--accentSoft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+}
+/* Error state on submit: flash every field's border red (set on the row). */
+.errored .input {
+  border-color: var(--neg);
+}
+/* Applied alongside .input in the JSX (padding/size override). */
+.dateInput {
+  padding: 7px 5px;
+  font-size: 12px;
+}
+.amount {
+  text-align: right;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.iconBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+}
+.save {
+  background: var(--accent);
+  color: #fff;
+}
+.cancel {
+  background: var(--line);
+  color: var(--ink2);
+}

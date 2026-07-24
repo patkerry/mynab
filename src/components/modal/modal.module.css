@@ -1,0 +1,45 @@
+/* Shared modal chrome — the header / body / footer used by ModalShell and the hand-rolled modals
+   (GoalModal, ReconcileModal) that need a custom footer. Colors/sizes come from the global tokens. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.title {
+  font-weight: 700;
+  font-size: 16px;
+}
+.close {
+  color: var(--ink3);
+}
+.body {
+  padding: 18px 20px;
+}
+.footer {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 18px;
+  justify-content: flex-end;
+}
+/* GoalModal: destructive "Remove goal" on the left, Cancel/Save grouped on the right. */
+.footerSplit {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 18px;
+  justify-content: space-between;
+}
+.footerGroup {
+  display: flex;
+  gap: 10px;
+}
+/* GoalModal: destructive "Remove goal" ghost button. */
+.removeBtn {
+  color: var(--neg);
+}
+/* GoalModal: the disabled "Savings target" segment for payment categories. */
+.segDisabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

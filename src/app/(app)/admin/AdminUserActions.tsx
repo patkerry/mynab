@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { suspendUser, reactivateUser, deleteUser } from "./actions";
+import styles from "./AdminUserActions.module.css";
 
 // Row actions for the admin users table. Client component so destructive actions get a confirm and
 // buttons can disable while the server action runs.
@@ -18,15 +19,15 @@ export function AdminUserActions({
 }) {
   const [pending, startTransition] = useTransition();
 
-  if (isSelf) return <span style={{ color: "#999", fontSize: 13 }}>(you)</span>;
+  if (isSelf) return <span className={styles.you}>(you)</span>;
 
   return (
-    <span style={{ display: "inline-flex", gap: 8 }}>
+    <span className={styles.actions}>
       {suspended ? (
         <button
           disabled={pending}
           onClick={() => startTransition(() => reactivateUser(userId))}
-          style={btn("#0a7")}
+          className={`${styles.btn} ${styles.reactivate}`}
         >
           Reactivate
         </button>
@@ -34,7 +35,7 @@ export function AdminUserActions({
         <button
           disabled={pending}
           onClick={() => startTransition(() => suspendUser(userId))}
-          style={btn("#b70")}
+          className={`${styles.btn} ${styles.suspend}`}
         >
           Suspend
         </button>
@@ -46,22 +47,10 @@ export function AdminUserActions({
             startTransition(() => deleteUser(userId));
           }
         }}
-        style={btn("#c33")}
+        className={`${styles.btn} ${styles.delete}`}
       >
         Delete
       </button>
     </span>
   );
-}
-
-function btn(color: string): React.CSSProperties {
-  return {
-    padding: "4px 10px",
-    borderRadius: 6,
-    border: `1px solid ${color}`,
-    color,
-    background: "transparent",
-    fontSize: 13,
-    cursor: "pointer",
-  };
 }

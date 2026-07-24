@@ -10,6 +10,7 @@ import { useToast } from "./toast/ToastContext";
 import { autoAssignGoals, quickBudget, setGroupHidden, reorderCategories, reorderGroups } from "@/app/(app)/budget/actions";
 import { CatRow } from "./CatRow";
 import type { Account, BudgetEntry, Category, CategoryGroup, Transaction } from "@/generated/prisma-postgres/client";
+import styles from "./BudgetView.module.css";
 
 function resolveBreakdown(categoryId: string, categories: Category[], transactions: Transaction[], budgetEntries: BudgetEntry[], accounts: Account[], month: string): CatBreakdown {
   const raw = computePaymentCategoryBreakdown({ accounts, categories, transactions, budgetEntries }, categoryId, month);
@@ -117,15 +118,13 @@ export function BudgetView({
 
   return (
     <>
-      <div style={{ padding: "18px 26px 0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Link href={`/budget?month=${addMonths(month, -1)}`} className="btn btn-ghost" style={{ padding: 8 }}>
+      <div className={styles.toolbar}>
+        <div className={styles.monthNav}>
+          <Link href={`/budget?month=${addMonths(month, -1)}`} className={`btn btn-ghost ${styles.navBtn}`}>
             <ChevronLeft size={16} />
           </Link>
-          <div style={{ fontWeight: 700, fontSize: 17, minWidth: 168, textAlign: "center", letterSpacing: "-0.01em" }}>
-            {monthLabel(month)}
-          </div>
-          <Link href={`/budget?month=${addMonths(month, 1)}`} className="btn btn-ghost" style={{ padding: 8 }}>
+          <div className={styles.monthLabel}>{monthLabel(month)}</div>
+          <Link href={`/budget?month=${addMonths(month, 1)}`} className={`btn btn-ghost ${styles.navBtn}`}>
             <ChevronRight size={16} />
           </Link>
           {month !== curYM() && (
@@ -134,7 +133,7 @@ export function BudgetView({
             </Link>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.actions}>
           <button className="btn btn-ghost" onClick={handleQuickBudget} title="Fill every not-yet-budgeted category from its 3-month average">
             <CalendarClock size={15} /> Quick budget
           </button>
@@ -147,53 +146,34 @@ export function BudgetView({
         </div>
       </div>
 
-      <div style={{ padding: "16px 26px 0" }}>
+      <div className={styles.rtaWrap}>
         <div
-          className="card"
+          className={`card ${styles.rtaCard}`}
           title="Ready to Assign is your total unassigned money across all months — it isn't scoped to the selected month, so it stays the same as you page between months."
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 16,
-            padding: "30px 34px",
-            borderRadius: 26,
-            border: "1px solid var(--line)",
-            background: "radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--accent) 22%, var(--surface)) 0%, var(--surface) 55%)",
-          }}
         >
           <div>
-            <div className="eyebrow" style={{ color: bannerColor, letterSpacing: "0.1em" }}>
+            <div className={`eyebrow ${styles.rtaEyebrow}`} style={{ color: bannerColor }}>
               {banner.label}
-              <span style={{ color: "var(--ink3)" }}> · all months</span>
+              <span className={styles.allMonths}> · all months</span>
             </div>
-            <div style={{ fontSize: 14, color: "var(--ink2)", marginTop: 4 }}>{banner.sub}</div>
+            <div className={styles.rtaSub}>{banner.sub}</div>
           </div>
-          <div className="num" style={{ fontSize: 60, fontWeight: 700, color: heroNum, letterSpacing: "-0.03em", lineHeight: 1 }}>
+          <div className={`num ${styles.heroNum}`} style={{ color: heroNum }}>
             {fmt(rta)}
           </div>
         </div>
       </div>
 
-      <div style={{ padding: "18px 26px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 132px 120px 120px", gap: 8, padding: "0 14px 8px" }}>
+      <div className={styles.tableWrap}>
+        <div className={styles.headerRow}>
           <span className="eyebrow">Category</span>
-          <span className="eyebrow" style={{ textAlign: "right" }}>
-            Last mo
-          </span>
-          <span className="eyebrow" style={{ textAlign: "right" }}>
-            Assigned
-          </span>
-          <span className="eyebrow" style={{ textAlign: "right" }}>
-            Activity
-          </span>
-          <span className="eyebrow" style={{ textAlign: "right" }}>
-            Available
-          </span>
+          <span className={`eyebrow ${styles.right}`}>Last mo</span>
+          <span className={`eyebrow ${styles.right}`}>Assigned</span>
+          <span className={`eyebrow ${styles.right}`}>Activity</span>
+          <span className={`eyebrow ${styles.right}`}>Available</span>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 40 }}>
+        <div className={styles.groupList}>
           {groups.map((g) => {
             const cats = categories.filter((c) => c.groupId === g.id);
             // Hiding is purely a display filter — group totals still include hidden categories
@@ -207,7 +187,7 @@ export function BudgetView({
             const grpActivity = cats.reduce((s, c) => s + derived.activityIn(c.id, month), 0);
             const grpAvail = cats.reduce((s, c) => s + derived.available(c.id, month), 0);
             return (
-              <div key={g.id} className="card" style={{ overflow: "hidden" }}>
+              <div key={g.id} className={`card ${styles.groupCard}`}>
                 <div
                   draggable
                   onDragStart={() => setDragGroupId(g.id)}
@@ -216,55 +196,33 @@ export function BudgetView({
                     e.preventDefault();
                     onGroupDrop(g.id);
                   }}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 110px 132px 120px 120px",
-                    gap: 8,
-                    padding: "12px 14px",
-                    background: "var(--paper)",
-                    alignItems: "center",
-                    borderBottom: "1px solid var(--line)",
-                  }}
+                  className={styles.groupHead}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span title="Drag to reorder group" style={{ cursor: "grab", color: "var(--ink3)", display: "grid", placeItems: "center", marginLeft: -4 }}>
+                  <div className={styles.groupNameCell}>
+                    <span title="Drag to reorder group" className={styles.grip}>
                       <GripVertical size={14} />
                     </span>
-                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{g.name}</span>
-                    <button
-                      onClick={() => openModal({ type: "category", groupId: g.id })}
-                      title="Add category"
-                      style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
-                    >
+                    <span className={styles.groupName}>{g.name}</span>
+                    <button onClick={() => openModal({ type: "category", groupId: g.id })} title="Add category" className={styles.iconBtn}>
                       <Plus size={15} />
                     </button>
                     {cats.length > 0 && (
                       <button
                         onClick={() => setGroupHidden(g.id, hiddenCats.length !== cats.length)}
                         title={hiddenCats.length === cats.length ? "Unhide category group" : "Hide category group"}
-                        style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
+                        className={styles.iconBtn}
                       >
                         {hiddenCats.length === cats.length ? <Eye size={13} /> : <EyeOff size={13} />}
                       </button>
                     )}
-                    <button
-                      onClick={() => openModal({ type: "editGroup", group: g })}
-                      title="Rename or delete group"
-                      style={{ color: "var(--ink3)", display: "grid", placeItems: "center" }}
-                    >
+                    <button onClick={() => openModal({ type: "editGroup", group: g })} title="Rename or delete group" className={styles.iconBtn}>
                       <Pencil size={13} />
                     </button>
                   </div>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink3)" }}>
-                    {fmt(grpLastAssigned)}
-                  </span>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
-                    {fmt(grpAssigned)}
-                  </span>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
-                    {fmt(grpActivity)}
-                  </span>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 700, fontSize: 13, color: grpAvail < 0 ? "var(--neg)" : "var(--ink)" }}>
+                  <span className={`num ${styles.grpLast}`}>{fmt(grpLastAssigned)}</span>
+                  <span className={`num ${styles.grpMid}`}>{fmt(grpAssigned)}</span>
+                  <span className={`num ${styles.grpMid}`}>{fmt(grpActivity)}</span>
+                  <span className={`num ${styles.grpAvail}`} style={{ color: grpAvail < 0 ? "var(--neg)" : "var(--ink)" }}>
                     {fmt(grpAvail)}
                   </span>
                 </div>
@@ -282,18 +240,7 @@ export function BudgetView({
                   <>
                     <button
                       onClick={() => setExpandedGroups((prev) => ({ ...prev, [g.id]: !isExpanded }))}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "8px 14px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "var(--ink3)",
-                        width: "100%",
-                        textAlign: "left",
-                        borderBottom: isExpanded ? "1px solid var(--line)" : "none",
-                      }}
+                      className={`${styles.expandBtn} ${isExpanded ? styles.expandBtnOpen : ""}`}
                     >
                       {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                       {hiddenCats.length} hidden categor{hiddenCats.length > 1 ? "ies" : "y"}
@@ -316,29 +263,13 @@ export function BudgetView({
           })}
 
           {paymentCategories.length > 0 && (
-            <div className="card" style={{ overflow: "hidden" }}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 110px 132px 120px 120px",
-                  gap: 8,
-                  padding: "12px 14px",
-                  background: "var(--paper)",
-                  alignItems: "center",
-                  borderBottom: "1px solid var(--line)",
-                }}
-              >
-                <span style={{ fontWeight: 700, fontSize: 13.5 }}>Credit Card Payments</span>
-                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink3)" }}>
-                  {fmt(pcLastAssigned)}
-                </span>
-                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
-                  {fmt(pcAssigned)}
-                </span>
-                <span className="num" style={{ textAlign: "right", fontWeight: 600, fontSize: 13, color: "var(--ink2)" }}>
-                  {fmt(pcActivity)}
-                </span>
-                <span className="num" style={{ textAlign: "right", fontWeight: 700, fontSize: 13, color: pcAvail < 0 ? "var(--neg)" : "var(--ink)" }}>
+            <div className={`card ${styles.groupCard}`}>
+              <div className={styles.groupHead}>
+                <span className={styles.groupName}>Credit Card Payments</span>
+                <span className={`num ${styles.grpLast}`}>{fmt(pcLastAssigned)}</span>
+                <span className={`num ${styles.grpMid}`}>{fmt(pcAssigned)}</span>
+                <span className={`num ${styles.grpMid}`}>{fmt(pcActivity)}</span>
+                <span className={`num ${styles.grpAvail}`} style={{ color: pcAvail < 0 ? "var(--neg)" : "var(--ink)" }}>
                   {fmt(pcAvail)}
                 </span>
               </div>

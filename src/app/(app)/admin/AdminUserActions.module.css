@@ -1,0 +1,28 @@
+.you {
+  color: #999;
+  font-size: 13px;
+}
+.actions {
+  display: inline-flex;
+  gap: 8px;
+}
+.btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+.reactivate {
+  color: #0a7;
+  border-color: #0a7;
+}
+.suspend {
+  color: #b70;
+  border-color: #b70;
+}
+.delete {
+  color: #c33;
+  border-color: #c33;
+}

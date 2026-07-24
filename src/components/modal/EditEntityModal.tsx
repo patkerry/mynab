@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { ModalShell } from "./ModalShell";
 import { useToast } from "../toast/ToastContext";
 import type { ActionResult } from "@/app/(app)/budget/actions";
+import styles from "./EditEntityModal.module.css";
 
 // Shared rename + delete dialog for a category or group. Rename via Save; delete via a destructive
 // button with a two-step in-modal confirm. A blocked delete (block-if-in-use) shows the reason as a
@@ -62,12 +63,12 @@ export function EditEntityModal({
         <label>{label}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} autoFocus />
       </div>
-      <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+      <div className={styles.deleteZone}>
         <button
-          className="btn btn-ghost"
+          className={`btn btn-ghost ${styles.deleteBtn}`}
           onClick={del}
           disabled={busy}
-          style={{ color: "var(--negInk)", borderColor: confirming ? "var(--neg)" : undefined }}
+          style={{ borderColor: confirming ? "var(--neg)" : undefined }}
         >
           <Trash2 size={15} /> {confirming ? "Confirm delete" : deleteLabel}
         </button>

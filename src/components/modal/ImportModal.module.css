@@ -1,0 +1,42 @@
+.dropzone {
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  padding: 14px 12px;
+  text-align: center;
+  background: var(--paper);
+  font-size: 13px;
+  color: var(--ink2);
+  margin-bottom: 8px;
+}
+.dropzone.active {
+  border-color: var(--accent);
+  background: var(--accentSoft);
+}
+.fileName {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chooseLabel {
+  font-size: 12px;
+  color: var(--ink3);
+  display: block;
+  margin-bottom: 4px;
+}
+.pasteArea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  resize: vertical;
+}
+.pasteArea:disabled {
+  background: var(--paper);
+}
+.pasteCount {
+  font-size: 12px;
+  color: var(--ink2);
+  margin-top: 4px;
+}

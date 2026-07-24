@@ -6,6 +6,7 @@ import { ModalShell } from "./ModalShell";
 import { importTransactions } from "@/app/(app)/accounts/actions";
 import { useToast } from "../toast/ToastContext";
 import type { Account } from "@/generated/prisma-postgres/client";
+import styles from "./ImportModal.module.css";
 
 export function ImportModal({ close, accountId, accounts }: { close: () => void; accountId: string; accounts: Account[] }) {
   const [selectedAccountId, setSelectedAccountId] = useState(accountId || accounts[0]?.id || "");
@@ -91,19 +92,10 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
               setPasted("");
             }
           }}
-          style={{
-            border: `2px dashed ${dragOver ? "var(--accent)" : "var(--line)"}`,
-            borderRadius: 10,
-            padding: "14px 12px",
-            textAlign: "center",
-            background: dragOver ? "var(--accentSoft)" : "var(--paper)",
-            fontSize: 13,
-            color: "var(--ink2)",
-            marginBottom: 8,
-          }}
+          className={`${styles.dropzone} ${dragOver ? styles.active : ""}`}
         >
           {file ? (
-            <span style={{ color: "var(--ink)", fontWeight: 600 }}>{file.name}</span>
+            <span className={styles.fileName}>{file.name}</span>
           ) : (
             <b>Drag a file here</b>
           )}
@@ -112,7 +104,7 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
             picker when the <input type=file> isn't rendered. No `accept` restriction on purpose —
             macOS Finder greys out files whose extension/UTI isn't listed; format is detected from
             the file's actual contents (isQfx in src/lib/qfx.ts). */}
-        <label style={{ fontSize: 12, color: "var(--ink3)", display: "block", marginBottom: 4 }}>or choose a file:</label>
+        <label className={styles.chooseLabel}>or choose a file:</label>
         <input
           ref={fileRef}
           type="file"
@@ -127,22 +119,13 @@ export function ImportModal({ close, accountId, accounts }: { close: () => void;
           disabled={!!file}
           rows={5}
           placeholder="Open the CSV/QFX in a text editor, copy everything, and paste here — no file picker needed."
-          style={{
-            width: "100%",
-            fontFamily: "ui-monospace, monospace",
-            fontSize: 12,
-            padding: "8px 10px",
-            borderRadius: 9,
-            border: "1px solid var(--line)",
-            background: file ? "var(--paper)" : "#fff",
-            resize: "vertical",
-          }}
+          className={styles.pasteArea}
         />
         {pasted.trim() && !file && (
-          <span style={{ fontSize: 12, color: "var(--ink2)", marginTop: 4 }}>{pasted.length.toLocaleString()} characters pasted</span>
+          <span className={styles.pasteCount}>{pasted.length.toLocaleString()} characters pasted</span>
         )}
       </div>
-      <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
+      <p className="hint">
         CSV needs columns Date, Payee, Amount, and optionally Memo. QFX/OFX (Quicken, bank
         downloads) is detected automatically — re-importing an overlapping QFX file skips any
         transaction already present (matched by the bank's own transaction id). Imported rows

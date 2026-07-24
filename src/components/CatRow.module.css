@@ -1,0 +1,80 @@
+.row {
+  display: grid;
+  grid-template-columns: 1fr 110px 132px 120px 120px;
+  gap: 8px;
+  padding: 10px 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.nameCell {
+  min-width: 0;
+}
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grip {
+  cursor: grab;
+  color: var(--ink3);
+  display: grid;
+  place-items: center;
+  margin-left: -4px;
+}
+.name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+}
+.iconBtn {
+  display: grid;
+  place-items: center;
+  color: var(--ink3);
+}
+.goalRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+.goalTrack {
+  flex: 1;
+  max-width: 150px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.goalFill {
+  height: 100%;
+}
+.goalLabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.breakdown {
+  font-size: 10.5px;
+  color: var(--ink3);
+  margin-top: 4px;
+}
+.cellRight {
+  text-align: right;
+}
+.lastBtn {
+  font-size: 13px;
+  color: var(--ink3);
+  cursor: pointer;
+  padding: 0;
+}
+.lastDash {
+  font-size: 13px;
+  color: var(--ink3);
+  opacity: 0.4;
+}
+.activity {
+  text-align: right;
+  font-size: 13.5px;
+}

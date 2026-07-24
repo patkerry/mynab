@@ -8,6 +8,7 @@ import { goalProgress, type Derived, type CatBreakdown } from "@/lib/budget";
 import { setAssigned, setCategoryHidden } from "@/app/(app)/budget/actions";
 import { useModal } from "./modal/ModalContext";
 import type { Category } from "@/generated/prisma-postgres/client";
+import styles from "./CatRow.module.css";
 
 export function CatRow({
   c,
@@ -64,7 +65,7 @@ export function CatRow({
 
   return (
     <div
-      className="row-hover"
+      className={`row-hover ${styles.row}`}
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
       onDragOver={onDrop ? (e) => e.preventDefault() : undefined}
@@ -76,20 +77,12 @@ export function CatRow({
             }
           : undefined
       }
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 110px 132px 120px 120px",
-        gap: 8,
-        padding: "10px 14px",
-        alignItems: "center",
-        borderBottom: "1px solid var(--line)",
-        opacity: c.isHidden ? 0.6 : 1,
-      }}
+      style={{ opacity: c.isHidden ? 0.6 : 1 }}
     >
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className={styles.nameCell}>
+        <div className={styles.nameRow}>
           {draggable && (
-            <span title="Drag to reorder" style={{ cursor: "grab", color: "var(--ink3)", display: "grid", placeItems: "center", marginLeft: -4 }}>
+            <span title="Drag to reorder" className={styles.grip}>
               <GripVertical size={14} />
             </span>
           )}
@@ -100,15 +93,15 @@ export function CatRow({
             // register instead, which is what a user actually wants to inspect here.
             href={c.linkedAccountId ? `/accounts?account=${c.linkedAccountId}&category=all` : `/accounts?account=all&category=${c.id}`}
             title="View transactions"
-            className="cat-name"
-            style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", padding: 0, textAlign: "left" }}
+            className={`cat-name ${styles.name}`}
           >
             {c.name}
           </Link>
           <button
             onClick={() => openModal({ type: "goal", cat: c })}
             title="Set goal"
-            style={{ display: "grid", placeItems: "center", color: c.goalType ? "var(--accent)" : "var(--ink3)", opacity: c.goalType ? 1 : 0.55 }}
+            className={styles.iconBtn}
+            style={{ color: c.goalType ? "var(--accent)" : undefined, opacity: c.goalType ? 1 : 0.55 }}
           >
             <Target size={13} />
           </button>
@@ -119,14 +112,14 @@ export function CatRow({
               <button
                 onClick={() => setCategoryHidden(c.id, !c.isHidden)}
                 title={c.isHidden ? "Unhide category" : "Hide category"}
-                style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
+                className={styles.iconBtn}
               >
                 {c.isHidden ? <Eye size={13} /> : <EyeOff size={13} />}
               </button>
               <button
                 onClick={() => openModal({ type: "editCategory", cat: c })}
                 title="Rename or delete category"
-                style={{ display: "grid", placeItems: "center", color: "var(--ink3)" }}
+                className={styles.iconBtn}
               >
                 <Pencil size={13} />
               </button>
@@ -134,17 +127,17 @@ export function CatRow({
           )}
         </div>
         {goalInfo && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
-            <div style={{ flex: 1, maxWidth: 150, height: 4, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
-              <div style={{ width: goalInfo.pct + "%", height: "100%", background: goalInfo.met ? "var(--pos)" : "var(--warn)" }} />
+          <div className={styles.goalRow}>
+            <div className={styles.goalTrack}>
+              <div className={styles.goalFill} style={{ width: goalInfo.pct + "%", background: goalInfo.met ? "var(--pos)" : "var(--warn)" }} />
             </div>
-            <span style={{ fontSize: 10.5, color: goalInfo.met ? "var(--posInk)" : "var(--warn)", fontWeight: 600, whiteSpace: "nowrap" }}>
+            <span className={styles.goalLabel} style={{ color: goalInfo.met ? "var(--posInk)" : "var(--warn)" }}>
               {goalLabel}
             </span>
           </div>
         )}
         {breakdown && (breakdown.sources.length > 0 || breakdown.paymentsCount > 0) && (
-          <div style={{ fontSize: 10.5, color: "var(--ink3)", marginTop: 4 }}>
+          <div className={styles.breakdown}>
             {breakdown.sources.map((s) => `${s.name} ${fmt(s.amount)}`).join(", ")}
             {breakdown.sources.length > 0 && breakdown.paymentsCount > 0 && " · "}
             {breakdown.paymentsCount > 0 &&
@@ -152,23 +145,20 @@ export function CatRow({
           </div>
         )}
       </div>
-      <div style={{ textAlign: "right" }}>
+      <div className={styles.cellRight}>
         {lastAssigned > 0 ? (
           <button
             onClick={fillFromLastMonth}
             title={`Assign ${fmt(lastAssigned)} — same as last month`}
-            className="num"
-            style={{ fontSize: 13, color: "var(--ink3)", cursor: "pointer", padding: 0 }}
+            className={`num ${styles.lastBtn}`}
           >
             {fmt(lastAssigned)}
           </button>
         ) : (
-          <span className="num" style={{ fontSize: 13, color: "var(--ink3)", opacity: 0.4 }}>
-            —
-          </span>
+          <span className={`num ${styles.lastDash}`}>—</span>
         )}
       </div>
-      <div style={{ textAlign: "right" }}>
+      <div className={styles.cellRight}>
         <input
           className="assign-in num"
           value={draft}
@@ -189,10 +179,10 @@ export function CatRow({
           }}
         />
       </div>
-      <span className="num" style={{ textAlign: "right", fontSize: 13.5, color: activity ? "var(--ink)" : "var(--ink3)" }}>
+      <span className={`num ${styles.activity}`} style={{ color: activity ? "var(--ink)" : "var(--ink3)" }}>
         {fmt(activity)}
       </span>
-      <div style={{ textAlign: "right" }}>
+      <div className={styles.cellRight}>
         <span className="pill num" style={availColor}>
           {fmt(avail)}
         </span>

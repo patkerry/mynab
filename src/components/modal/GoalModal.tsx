@@ -6,6 +6,7 @@ import { setGoal, removeGoal } from "@/app/(app)/budget/actions";
 import { parseMoney } from "@/lib/format";
 import { useToast } from "../toast/ToastContext";
 import type { Category, GoalType } from "@/generated/prisma-postgres/client";
+import m from "./modal.module.css";
 
 export function GoalModal({ close, cat }: { close: () => void; cat: Category }) {
   // A savings TARGET doesn't make sense on a payment category (its available rises with more
@@ -31,21 +32,13 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
-          borderBottom: "1px solid var(--line)",
-        }}
-      >
-        <h3 style={{ fontWeight: 700, fontSize: 16 }}>Goal · {cat.name}</h3>
-        <button onClick={close} style={{ color: "var(--ink3)" }}>
+      <div className={m.head}>
+        <h3 className={m.title}>Goal · {cat.name}</h3>
+        <button onClick={close} className={m.close}>
           <X size={19} />
         </button>
       </div>
-      <div style={{ padding: "18px 20px" }}>
+      <div className={m.body}>
         <div className="field">
           <label>Goal type</label>
           <div className="seg">
@@ -53,11 +46,10 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
               Monthly funding
             </button>
             <button
-              className={type === "TARGET" ? "on" : ""}
+              className={`${type === "TARGET" ? "on" : ""} ${isPaymentCategory ? m.segDisabled : ""}`}
               onClick={() => !isPaymentCategory && setType("TARGET")}
               disabled={isPaymentCategory}
               title={isPaymentCategory ? "Not available for payment categories" : undefined}
-              style={isPaymentCategory ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
             >
               Savings target
             </button>
@@ -67,7 +59,7 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
           <label>{type === "MONTHLY" ? "Assign each month" : "Total to save"}</label>
           <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="num" autoFocus />
         </div>
-        <p style={{ fontSize: 12, color: "var(--ink3)", margin: 0 }}>
+        <p className="hint">
           {isPaymentCategory
             ? "Payment categories can only use monthly funding — their available balance rises with card spending, so a savings target wouldn't track correctly."
             : type === "MONTHLY"
@@ -75,11 +67,11 @@ export function GoalModal({ close, cat }: { close: () => void; cat: Category }) 
               : "Progress tracks total available in the category."}
         </p>
       </div>
-      <div style={{ display: "flex", gap: 10, padding: "0 20px 18px", justifyContent: "space-between" }}>
-        <button className="btn btn-ghost" style={{ color: "var(--neg)" }} onClick={remove} disabled={!cat.goalType}>
+      <div className={m.footerSplit}>
+        <button className={`btn btn-ghost ${m.removeBtn}`} onClick={remove} disabled={!cat.goalType}>
           Remove goal
         </button>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className={m.footerGroup}>
           <button className="btn btn-ghost" onClick={close}>
             Cancel
           </button>

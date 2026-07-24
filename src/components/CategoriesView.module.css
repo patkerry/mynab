@@ -1,0 +1,94 @@
+.page {
+  padding: 18px 26px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.h2 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+}
+.desc {
+  font-size: 13px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--ink3);
+  font-size: 13px;
+}
+.groupList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.groupCard {
+  overflow: hidden;
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.iconBtn {
+  display: grid;
+  place-items: center;
+  color: var(--ink3);
+}
+.grip {
+  display: grid;
+  place-items: center;
+  color: var(--ink3);
+  cursor: grab;
+}
+.gripGroup {
+  display: grid;
+  place-items: center;
+  color: var(--ink3);
+  cursor: grab;
+  margin-left: -4px;
+}
+.groupName {
+  font-weight: 700;
+  font-size: 13.5px;
+  flex: 1;
+}
+.catRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 30px;
+  border-left: 2px solid var(--line);
+  margin-left: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.catName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+}
+.hiddenTag {
+  font-size: 10.5px;
+  color: var(--ink3);
+  font-weight: 600;
+}
+.emptyCats {
+  padding: 12px 14px 12px 40px;
+  font-size: 12.5px;
+  color: var(--ink3);
+}

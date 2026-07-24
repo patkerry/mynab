@@ -1,46 +1,24 @@
 import { CircleDot } from "lucide-react";
 import { signIn } from "@/auth";
+import styles from "./page.module.css";
 
 // Standalone full-screen login (rendered with only the root layout — no app sidebar). The proxy
 // redirects unauthenticated web visitors here and sends them to /budget once signed in.
 export default function LoginPage() {
   return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        display: "grid",
-        placeItems: "center",
-        padding: "2rem",
-        background: "var(--paper)",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 380,
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          padding: "40px 32px",
-          textAlign: "center",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.06)",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, marginBottom: 28 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent)", display: "grid", placeItems: "center" }}>
+    <div className={styles.wrap}>
+      <div className={styles.card}>
+        <div className={styles.brand}>
+          <div className={styles.logo}>
             <CircleDot size={26} color="#fff" strokeWidth={2.4} />
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: "-0.02em" }}>Assign</div>
-            <div style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 600, letterSpacing: ".08em", marginTop: 2 }}>
-              ZERO-BASED BUDGET
-            </div>
+            <div className={styles.title}>Assign</div>
+            <div className={styles.subtitle}>ZERO-BASED BUDGET</div>
           </div>
         </div>
 
-        <p style={{ color: "var(--ink2)", fontSize: 14, marginBottom: 28, lineHeight: 1.5 }}>
-          Sign in to your budget. Your data stays private to your account.
-        </p>
+        <p className={styles.blurb}>Sign in to your budget. Your data stays private to your account.</p>
 
         <form
           action={async () => {
@@ -48,24 +26,7 @@ export default function LoginPage() {
             await signIn("google", { redirectTo: "/budget" });
           }}
         >
-          <button
-            type="submit"
-            style={{
-              width: "100%",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              padding: "12px 16px",
-              borderRadius: 10,
-              border: "1px solid var(--line)",
-              background: "#fff",
-              color: "#1f2328",
-              fontWeight: 600,
-              fontSize: 15,
-              cursor: "pointer",
-            }}
-          >
+          <button type="submit" className={styles.googleBtn}>
             <GoogleIcon />
             Continue with Google
           </button>

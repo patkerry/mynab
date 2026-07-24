@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/db";
 import { AdminUserActions } from "./AdminUserActions";
+import styles from "./page.module.css";
 
 // Global admin console. requireAdmin() redirects non-admins/suspended before any data loads.
 // Web-only in practice; the desktop build has no users so this page is never meaningfully reached.
@@ -40,38 +41,38 @@ export default async function AdminPage() {
   ]);
 
   return (
-    <div style={{ padding: "2rem", maxWidth: 1100, margin: "0 auto", overflowX: "auto" }}>
-      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 4 }}>Admin</h1>
-      <p style={{ color: "#666", marginBottom: 24 }}>
+    <div className={styles.page}>
+      <h1 className={styles.h1}>Admin</h1>
+      <p className={styles.sub}>
         {users.length} user{users.length === 1 ? "" : "s"} · {budgets.length} budget{budgets.length === 1 ? "" : "s"}
       </p>
 
-      <h2 style={h2}>Users</h2>
-      <table style={table}>
+      <h2 className={styles.h2}>Users</h2>
+      <table className={styles.table}>
         <thead>
           <tr>
-            <th style={th}>Email</th>
-            <th style={th}>Name</th>
-            <th style={th}>Budgets</th>
-            <th style={th}>Joined</th>
-            <th style={th}>Status</th>
-            <th style={th}>Actions</th>
+            <th className={styles.th}>Email</th>
+            <th className={styles.th}>Name</th>
+            <th className={styles.th}>Budgets</th>
+            <th className={styles.th}>Joined</th>
+            <th className={styles.th}>Status</th>
+            <th className={styles.th}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {users.map((u) => (
             <tr key={u.id}>
-              <td style={td}>
+              <td className={styles.td}>
                 {u.email}
-                {u.isAdmin && <span style={badge("#06c")}>admin</span>}
+                {u.isAdmin && <span className={styles.badgeAdmin}>admin</span>}
               </td>
-              <td style={td}>{u.name ?? "—"}</td>
-              <td style={td}>{u._count.memberships}</td>
-              <td style={td}>{fmtDate(u.createdAt)}</td>
-              <td style={td}>
-                {u.suspendedAt ? <span style={badge("#c33")}>suspended</span> : <span style={{ color: "#0a7" }}>active</span>}
+              <td className={styles.td}>{u.name ?? "—"}</td>
+              <td className={styles.td}>{u._count.memberships}</td>
+              <td className={styles.td}>{fmtDate(u.createdAt)}</td>
+              <td className={styles.td}>
+                {u.suspendedAt ? <span className={styles.badgeSuspended}>suspended</span> : <span className={styles.active}>active</span>}
               </td>
-              <td style={td}>
+              <td className={styles.td}>
                 <AdminUserActions userId={u.id} email={u.email} suspended={!!u.suspendedAt} isSelf={u.id === admin.id} />
               </td>
             </tr>
@@ -79,16 +80,16 @@ export default async function AdminPage() {
         </tbody>
       </table>
 
-      <h2 style={{ ...h2, marginTop: 40 }}>Budgets</h2>
-      <table style={table}>
+      <h2 className={styles.h2Spaced}>Budgets</h2>
+      <table className={styles.table}>
         <thead>
           <tr>
-            <th style={th}>Name</th>
-            <th style={th}>Owner</th>
-            <th style={th}>Members</th>
-            <th style={th}>Accounts</th>
-            <th style={th}>Transactions</th>
-            <th style={th}>Created</th>
+            <th className={styles.th}>Name</th>
+            <th className={styles.th}>Owner</th>
+            <th className={styles.th}>Members</th>
+            <th className={styles.th}>Accounts</th>
+            <th className={styles.th}>Transactions</th>
+            <th className={styles.th}>Created</th>
           </tr>
         </thead>
         <tbody>
@@ -96,12 +97,12 @@ export default async function AdminPage() {
             const owner = b.memberships[0]?.user;
             return (
               <tr key={b.id}>
-                <td style={td}>{b.name}</td>
-                <td style={td}>{owner ? owner.email : <span style={{ color: "#c33" }}>no owner</span>}</td>
-                <td style={td}>{b._count.memberships}</td>
-                <td style={td}>{b._count.accounts}</td>
-                <td style={td}>{b._count.transactions}</td>
-                <td style={td}>{fmtDate(b.createdAt)}</td>
+                <td className={styles.td}>{b.name}</td>
+                <td className={styles.td}>{owner ? owner.email : <span className={styles.noOwner}>no owner</span>}</td>
+                <td className={styles.td}>{b._count.memberships}</td>
+                <td className={styles.td}>{b._count.accounts}</td>
+                <td className={styles.td}>{b._count.transactions}</td>
+                <td className={styles.td}>{fmtDate(b.createdAt)}</td>
               </tr>
             );
           })}
@@ -109,12 +110,4 @@ export default async function AdminPage() {
       </table>
     </div>
   );
-}
-
-const h2: React.CSSProperties = { fontSize: "1.1rem", fontWeight: 600, marginBottom: 12 };
-const table: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 14 };
-const th: React.CSSProperties = { textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #e5e5e5", color: "#666", fontWeight: 600 };
-const td: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #eee" };
-function badge(color: string): React.CSSProperties {
-  return { marginLeft: 8, fontSize: 11, fontWeight: 600, color, border: `1px solid ${color}`, borderRadius: 4, padding: "1px 5px" };
 }

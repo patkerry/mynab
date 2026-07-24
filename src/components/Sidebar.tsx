@@ -7,6 +7,7 @@ import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { signOutAction } from "@/app/auth-actions";
 import type { Account } from "@/generated/prisma-postgres/client";
+import styles from "./Sidebar.module.css";
 
 export function Sidebar({
   accounts,
@@ -35,43 +36,18 @@ export function Sidebar({
   const currentCategory = searchParams.get("category") || "all";
 
   return (
-    <aside
-      className="sidebar"
-      style={{
-        width: 268,
-        background: "var(--surface)",
-        borderRight: "1px solid var(--line)",
-        padding: "20px 16px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 22,
-        position: "sticky",
-        top: 0,
-        height: "100vh",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px" }}>
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 9,
-            background: "var(--accent)",
-            display: "grid",
-            placeItems: "center",
-          }}
-        >
+    <aside className={`sidebar ${styles.aside}`}>
+      <div className={styles.brand}>
+        <div className={styles.logo}>
           <CircleDot size={17} color="#fff" strokeWidth={2.4} />
         </div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}>Assign</div>
-          <div style={{ fontSize: 10, color: "var(--ink3)", fontWeight: 600, letterSpacing: ".04em", marginTop: -1 }}>
-            ZERO-BASED BUDGET
-          </div>
+          <div className={styles.title}>Assign</div>
+          <div className={styles.subtitle}>ZERO-BASED BUDGET</div>
         </div>
       </div>
 
-      <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <nav className={styles.nav}>
         <Link href="/budget" className={`navlink ${pathname === "/budget" ? "active" : ""}`}>
           <LayoutGrid size={17} /> Budget
         </Link>
@@ -91,22 +67,14 @@ export function Sidebar({
         )}
       </nav>
 
-      <div
-        className="acct-list"
-        style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}
-      >
+      <div className={`acct-list ${styles.acctList}`}>
         <Link
           href="/accounts?account=all&category=all"
-          className="navlink"
-          style={{
-            justifyContent: "space-between",
-            padding: "6px 6px",
-            marginBottom: 2,
-            background: onAccounts && currentAccount === "all" && currentCategory === "all" ? "var(--accentSoft)" : "transparent",
-          }}
+          className={`navlink ${styles.allAccounts}`}
+          style={{ background: onAccounts && currentAccount === "all" && currentCategory === "all" ? "var(--accentSoft)" : "transparent" }}
         >
           <span className="eyebrow">All accounts</span>
-          <span className="num" style={{ fontSize: 12, fontWeight: 700, color: netWorth >= 0 ? "var(--ink)" : "var(--neg)" }}>
+          <span className={`num ${styles.allBalance}`} style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--neg)" }}>
             {fmt(netWorth)}
           </span>
         </Link>
@@ -118,52 +86,37 @@ export function Sidebar({
             <Link
               key={a.id}
               href={`/accounts?account=${a.id}&category=all`}
-              className="navlink"
+              className={`navlink ${styles.acctLink}`}
               style={{
-                gap: 9,
-                padding: "8px 8px",
-                fontWeight: 600,
                 background: active ? "var(--accentSoft)" : "transparent",
                 color: active ? "var(--accent)" : "var(--ink)",
               }}
             >
               <I size={16} color={active ? "var(--accent)" : "var(--ink3)"} />
+              <span className={styles.acctName}>{a.name}</span>
               <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  flex: 1,
-                  textAlign: "left",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {a.name}
-              </span>
-              <span
-                className="num"
-                style={{ fontSize: 12.5, fontWeight: 600, color: bal < 0 ? "var(--neg)" : active ? "var(--accent)" : "var(--ink2)" }}
+                className={`num ${styles.acctBalance}`}
+                style={{ color: bal < 0 ? "var(--neg)" : active ? "var(--accent)" : "var(--ink2)" }}
               >
                 {fmt(bal)}
               </span>
             </Link>
           );
         })}
-        <button className="navlink" style={{ color: "var(--accent)", fontSize: 13, marginTop: 2 }} onClick={() => openModal({ type: "account" })}>
+        <button className={`navlink ${styles.addBtn}`} onClick={() => openModal({ type: "account" })}>
           <Plus size={16} /> Add account
         </button>
       </div>
 
       {showDemoReset && (
-        <button className="btn btn-ghost" style={{ justifyContent: "center" }} onClick={() => openModal({ type: "reset" })}>
+        <button className={`btn btn-ghost ${styles.centerBtn}`} onClick={() => openModal({ type: "reset" })}>
           <RotateCcw size={14} /> Reset demo data
         </button>
       )}
 
       {showAuth && (
         <form action={signOutAction}>
-          <button type="submit" className="btn btn-ghost" style={{ justifyContent: "center", width: "100%" }}>
+          <button type="submit" className={`btn btn-ghost ${styles.fullBtn}`}>
             <LogOut size={14} /> Sign out
           </button>
         </form>
