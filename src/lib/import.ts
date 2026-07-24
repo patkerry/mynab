@@ -87,6 +87,13 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
     skipped = result.skipped;
   }
   if (parsed.length === 0) return { ok: false, reason: "No valid rows found in the file." };
+  // Hard row cap: with a 10mb Server Action body limit a pathological file could carry 100k+
+  // rows, and every later page pays O(all rows) — cap one import at something no real bank
+  // export approaches (a year of daily transactions is ~1k rows).
+  const MAX_IMPORT_ROWS = 10000;
+  if (parsed.length > MAX_IMPORT_ROWS) {
+    return { ok: false, reason: `That file has ${parsed.length.toLocaleString()} rows — the limit is ${MAX_IMPORT_ROWS.toLocaleString()} per import. Split the export into smaller date ranges.` };
+  }
 
   // createMany's `skipDuplicates` is a Postgres/MySQL-only Prisma feature — it throws on SQLite
   // (the Electron desktop build). So instead of leaning on the DB to drop rows that collide with
@@ -128,35 +135,40 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
   // (see undoImport in accounts/actions.ts).
   const importBatchId = uid("imp");
 
+  // The whole insert is ONE transaction: a failure partway (e.g. a unique-constraint hit from a
+  // concurrent overlapping import racing past the pre-filter above) must not leave a half-imported
+  // batch behind. Chunked only to keep individual createMany statements a sane size.
   const CHUNK = 500;
   let importedCount = 0;
   let guessedCount = 0;
-  for (let i = 0; i < toInsert.length; i += CHUNK) {
-    const chunk = toInsert.slice(i, i + CHUNK);
-    const result = await prisma.transaction.createMany({
-      data: chunk.map((r) => {
-        const categoryId = guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
-        if (categoryId) guessedCount++;
-        return {
-          budgetId,
-          accountId,
-          date: r.date,
-          payee: r.payee,
-          memo: r.memo,
-          kind: "NORMAL" as const,
-          categoryId,
-          amountCents: r.amountCents,
-          // Cleared-but-pending on import (see IMPORTED_TXN_STATE): an export only contains
-          // transactions that already posted, but they still await human review. This exact pairing
-          // is what keeps the register header's Uncleared sum over disjoint sets — see register.ts.
-          ...IMPORTED_TXN_STATE,
-          externalId: r.externalId,
-          importBatchId,
-        };
-      }),
-    });
-    importedCount += result.count;
-  }
+  await prisma.$transaction(async (tx) => {
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK);
+      const result = await tx.transaction.createMany({
+        data: chunk.map((r) => {
+          const categoryId = guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
+          if (categoryId) guessedCount++;
+          return {
+            budgetId,
+            accountId,
+            date: r.date,
+            payee: r.payee,
+            memo: r.memo,
+            kind: "NORMAL" as const,
+            categoryId,
+            amountCents: r.amountCents,
+            // Cleared-but-pending on import (see IMPORTED_TXN_STATE): an export only contains
+            // transactions that already posted, but they still await human review. This exact pairing
+            // is what keeps the register header's Uncleared sum over disjoint sets — see register.ts.
+            ...IMPORTED_TXN_STATE,
+            externalId: r.externalId,
+            importBatchId,
+          };
+        }),
+      });
+      importedCount += result.count;
+    }
+  });
 
   return { ok: true, imported: importedCount, duplicates: parsed.length - importedCount, skipped, guessed: guessedCount };
 }

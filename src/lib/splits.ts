@@ -71,9 +71,9 @@ export function validateSplitDraft(opts: {
 
 // A split is coherent iff its lines sum EXACTLY to the parent's signed amount. Enforced at write
 // time by validateSplitDraft, but re-checked wherever a split changes state (approvePending,
-// toggleCleared, the register's approvable predicate): approving or clearing an incoherent split
-// would put money into categories that never left the account. Shared so the client checkbox,
-// the bulk approve, and the clear gate can't disagree about what "coherent" means.
+// the register's approvable predicate): approving or clearing an incoherent split
+// would put money into categories that never left the account. Shared so the client checkbox
+// and the bulk approve can't disagree about what "coherent" means.
 export function splitsSumToParent(parentAmountCents: number, lines: readonly { amountCents: number }[]): boolean {
   return lines.reduce((s, l) => s + l.amountCents, 0) === parentAmountCents;
 }

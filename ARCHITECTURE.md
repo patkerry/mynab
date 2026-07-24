@@ -206,10 +206,10 @@ from guess history; imports always arrive unsplit — users split during review.
 
 ## Reconciliation
 
-No auto-clearing, ever. `reconcileEligibility` blocks (in this order) on any `pending` row first,
-then any uncleared row. `toggleCleared` separately blocks uncleared→cleared for an uncategorized
-`NORMAL` transaction or a still-`pending` one. A `Reconciliation` row is written every time,
-including a clean reconciliation with no adjustment.
+No auto-clearing, ever. `reconcileEligibility` blocks on any `pending` row. A `Reconciliation`
+row is written every time, including a clean reconciliation with no adjustment. (The old
+`toggleCleared` action was removed as dead code — the cleared toggle was dropped from the UI long
+before, and nothing imported it; clearing happens only via approve/save.)
 
 ## Sidebar & register chrome (`Sidebar.tsx`, `AccountsView.tsx`)
 

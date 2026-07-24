@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireBudget } from "@/lib/budget-context";
-import { parseMoney, uid, curYM, monthKeyOf } from "@/lib/format";
+import { parseMoney, uid, curYM, monthKeyOf, todayLocal } from "@/lib/format";
 import { PAYMENT_GROUP_NAME, buildPaymentCategoryDraft, computeOverspendCoverage } from "@/lib/budget";
 import { validateSplitDraft, splitsSumToParent, type ParsedSplitLine } from "@/lib/splits";
 import { runImport } from "@/lib/import";
@@ -26,33 +26,57 @@ async function isPaymentCategory(categoryId: string, budgetId: string): Promise<
   return category?.linkedAccountId != null;
 }
 
-// Applies computeOverspendCoverage (src/lib/budget.ts): if this transaction was a credit card
+// Applies computeOverspendCoverage (src/lib/budget.ts): if a transaction was a credit card
 // purchase that pushed its category negative, auto-assign the shortfall from Ready-to-Assign —
 // same mechanism a manual assignment uses (upsert a BudgetEntry), just auto-triggered. Only
-// fires for CREDIT accounts with a real categoryId, matching the deferred item's exact scope;
-// cash overspending is untouched. Must run inside the same `tx` as the transaction write so it
-// sees it when re-fetching current state. All reads/writes scoped to the active budget.
-async function applyOverspendCoverage(tx: Prisma.TransactionClient, budgetId: string, accountId: string, categoryId: string | null, date: string) {
-  if (!categoryId) return;
-  const account = await tx.account.findFirst({ where: { id: accountId, budgetId } });
-  if (account?.type !== "CREDIT") return;
+// fires for CREDIT accounts with a real categoryId; cash overspending is untouched. Must run
+// inside the same `tx` as the transaction write so it sees it when re-fetching current state.
+//
+// Batched: the budget snapshot is fetched ONCE and the sequential drain-RTA semantics are
+// preserved by applying each item's coverage to the in-memory budgetEntries before computing the
+// next (the per-item computeOverspendCoverage used to re-fetch the entire budget — 2 full table
+// scans per item, which made approving a 50-row card import ~100 full scans in one transaction).
+async function applyOverspendCoverageBatch(
+  tx: Prisma.TransactionClient,
+  budgetId: string,
+  items: { accountId: string; categoryId: string; date: string }[]
+) {
+  if (items.length === 0) return;
+  const accounts = await tx.account.findMany({ where: { budgetId } });
+  const creditIds = new Set(accounts.filter((a) => a.type === "CREDIT").map((a) => a.id));
+  const applicable = items.filter((i) => creditIds.has(i.accountId));
+  if (applicable.length === 0) return;
 
-  const [accounts, categories, transactions, budgetEntries, splits] = await Promise.all([
-    tx.account.findMany({ where: { budgetId } }),
+  const [categories, transactions, budgetEntries, splits] = await Promise.all([
     tx.category.findMany({ where: { budgetId } }),
     tx.transaction.findMany({ where: { budgetId, deletedAt: null } }),
     tx.budgetEntry.findMany({ where: { budgetId } }),
     tx.transactionSplit.findMany({ where: { budgetId, transaction: { deletedAt: null } } }),
   ]);
-  const month = monthKeyOf(date);
-  const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries, splits }, categoryId, month);
-  if (coverage <= 0) return;
+  // Mutable copy: each applied coverage must be visible to the next item's computation (coverage
+  // is capped by remaining RTA, and repeat categories must not double-cover).
+  const entries = [...budgetEntries];
+  for (const item of applicable) {
+    const month = monthKeyOf(item.date);
+    const coverage = computeOverspendCoverage({ accounts, categories, transactions, budgetEntries: entries, splits }, item.categoryId, month);
+    if (coverage <= 0) continue;
+    const existing = entries.find((e) => e.categoryId === item.categoryId && e.yearMonth === month);
+    if (existing) existing.amountCents += coverage;
+    else {
+      entries.push({ id: uid("be"), budgetId, categoryId: item.categoryId, yearMonth: month, amountCents: coverage, createdAt: new Date(), updatedAt: new Date() });
+    }
+    await tx.budgetEntry.upsert({
+      where: { categoryId_yearMonth: { categoryId: item.categoryId, yearMonth: month } },
+      update: { amountCents: { increment: coverage } },
+      create: { budgetId, categoryId: item.categoryId, yearMonth: month, amountCents: coverage },
+    });
+  }
+}
 
-  await tx.budgetEntry.upsert({
-    where: { categoryId_yearMonth: { categoryId, yearMonth: month } },
-    update: { amountCents: { increment: coverage } },
-    create: { budgetId, categoryId, yearMonth: month, amountCents: coverage },
-  });
+// Single-item convenience wrapper (add/update of an unsplit transaction).
+async function applyOverspendCoverage(tx: Prisma.TransactionClient, budgetId: string, accountId: string, categoryId: string | null, date: string) {
+  if (!categoryId) return;
+  await applyOverspendCoverageBatch(tx, budgetId, [{ accountId, categoryId, date }]);
 }
 
 // Server-side half of split validation: resolve the draft's account type and the budget's
@@ -205,9 +229,11 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
         data: v.lines.map((l) => ({ budgetId, transactionId: parent.id, categoryId: l.categoryId, amountCents: l.amountCents, memo: l.memo })),
       });
       // Same per-category coverage a single-category card purchase gets, once per line category.
-      for (const catId of v.lineCategoryIds) {
-        await applyOverspendCoverage(tx, budgetId, draft.accountId, catId, draft.date);
-      }
+      await applyOverspendCoverageBatch(
+        tx,
+        budgetId,
+        v.lineCategoryIds.map((categoryId) => ({ accountId: draft.accountId, categoryId, date: draft.date }))
+      );
     });
   } else {
     const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
@@ -352,9 +378,11 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       await tx.transactionSplit.createMany({
         data: v.lines.map((l) => ({ budgetId, transactionId: id, categoryId: l.categoryId, amountCents: l.amountCents, memo: l.memo })),
       });
-      for (const catId of v.lineCategoryIds) {
-        await applyOverspendCoverage(tx, budgetId, draft.accountId, catId, draft.date);
-      }
+      await applyOverspendCoverageBatch(
+        tx,
+        budgetId,
+        v.lineCategoryIds.map((categoryId) => ({ accountId: draft.accountId, categoryId, date: draft.date }))
+      );
     });
   } else {
     if (draft.categoryId && (await isPaymentCategory(draft.categoryId, budgetId))) return false;
@@ -362,8 +390,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     // Saving is how a pending import gets approved (pending -> false), so a NORMAL transaction
     // must have a category to be saved: approving an uncategorized purchase would leave money
     // that never shows up against any budget category. INCOME/TRANSFER take the branches above
-    // and are intentionally categoryId: null, so they're unaffected. Mirrors the same rule the
-    // uncleared->cleared gate enforces in toggleCleared.
+    // and are intentionally categoryId: null, so they're unaffected.
     if (categoryId === null) return false;
     await prisma.$transaction(async (tx) => {
       // Converting a split row back to a single category discards its lines.
@@ -410,51 +437,21 @@ export async function approvePending(ids: string[]): Promise<{ approved: number 
   const rows = fetched.filter((r) => r.splits.length === 0 || splitsSumToParent(r.amountCents, r.splits));
   if (rows.length === 0) return { approved: 0 };
   await prisma.$transaction(async (tx) => {
-    for (const r of rows) {
-      // Approving also clears: a pending row is always an imported (already-posted) transaction, so
-      // approving it confirms it against the bank in the same step — no separate clear click.
-      await tx.transaction.update({ where: { id: r.id }, data: { pending: false, cleared: true } });
-      // Coverage per affected category: the row's own, or each distinct categorized split line.
+    // Approving also clears: a pending row is always an imported (already-posted) transaction, so
+    // approving it confirms it against the bank in the same step — no separate clear click.
+    await tx.transaction.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { pending: false, cleared: true } });
+    // Coverage per affected (row, category): the row's own category, or each distinct categorized
+    // split line — one batched pass (single budget snapshot), not a re-fetch per row.
+    const items = rows.flatMap((r) => {
       const catIds = r.categoryId
         ? [r.categoryId]
         : [...new Set(r.splits.map((s) => s.categoryId).filter((c): c is string => c !== null))];
-      for (const catId of catIds) {
-        await applyOverspendCoverage(tx, budgetId, r.accountId, catId, r.date);
-      }
-    }
+      return catIds.map((categoryId) => ({ accountId: r.accountId, categoryId, date: r.date }));
+    });
+    await applyOverspendCoverageBatch(tx, budgetId, items);
   });
   revalidateAll();
   return { approved: rows.length };
-}
-
-export type ToggleClearedResult = { ok: true } | { ok: false; reason: string };
-
-// Every approved (cleared) transaction needs a category — otherwise a credit card purchase
-// (or any spending) can sit there uncategorized indefinitely, never showing up against any
-// budget category, including a card's payment category. Only blocks the uncleared->cleared
-// transition on a plain NORMAL transaction with no category; INCOME and TRANSFER legs are
-// intentionally always categoryId: null and are unaffected (kind !== "NORMAL" short-circuits).
-export async function toggleCleared(id: string): Promise<ToggleClearedResult> {
-  const { budgetId } = await requireBudget("write");
-  const t = await prisma.transaction.findFirst({ where: { id, budgetId }, include: { splits: { select: { amountCents: true } } } });
-  if (!t) return { ok: false, reason: "Transaction not found." };
-
-  const willClear = !t.cleared;
-  if (willClear && t.pending) {
-    return { ok: false, reason: "Approve this imported transaction before marking it cleared." };
-  }
-  // A split parent has categoryId null but IS categorized (via its lines), so it clears freely —
-  // as long as its lines still sum to the parent amount (same coherence rule approvePending holds).
-  if (willClear && t.kind === "NORMAL" && t.categoryId === null && t.splits.length === 0) {
-    return { ok: false, reason: "Add a category before marking this transaction cleared." };
-  }
-  if (willClear && t.splits.length > 0 && !splitsSumToParent(t.amountCents, t.splits)) {
-    return { ok: false, reason: "This split's lines don't add up to its total — edit the split first." };
-  }
-
-  await prisma.transaction.update({ where: { id }, data: { cleared: willClear } });
-  revalidateAll();
-  return { ok: true };
 }
 
 // Adjusting the balance is only allowed once every imported row on the account has been reviewed:
@@ -505,7 +502,7 @@ export async function reconcileAccount(accountId: string, actualBalance: string)
   const currentBalanceCents = transactions.reduce((s, t) => s + t.amountCents, 0);
   const actualCents = parseMoney(actualBalance);
   const diff = actualCents - currentBalanceCents;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
 
   await prisma.$transaction(async (tx) => {
     let adjustmentTransactionId: string | null = null;

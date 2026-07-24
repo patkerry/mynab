@@ -14,12 +14,25 @@ export async function getSidebarData() {
   const active = await getActiveBudgetOptional();
   if (!active) return { accounts: [], acctBalance: {} as Record<string, number>, netWorth: 0, readyToAssign: 0 };
   const budgetId = active.budgetId;
-  const [accounts, transactions, budgetEntries, rtaSplitLines] = await Promise.all([
+  // This runs on EVERY navigation (the app layout renders the sidebar), so everything here is a
+  // SQL aggregate — never a findMany that materializes the whole transaction history into JS.
+  const [accounts, balanceByAccount, incomeByAccount, entriesAgg, rtaSplitLines] = await Promise.all([
     prisma.account.findMany({ where: { budgetId }, orderBy: { createdAt: "asc" } }),
-    prisma.transaction.findMany({ where: { budgetId, deletedAt: null }, select: { accountId: true, amountCents: true, kind: true, pending: true } }),
-    prisma.budgetEntry.findMany({ where: { budgetId }, select: { amountCents: true } }),
+    prisma.transaction.groupBy({
+      by: ["accountId"],
+      where: { budgetId, deletedAt: null },
+      _sum: { amountCents: true },
+    }),
+    // Grouped by account so the off-budget filter below can apply in JS over a tiny result set.
+    prisma.transaction.groupBy({
+      by: ["accountId"],
+      where: { budgetId, deletedAt: null, kind: "INCOME", pending: false },
+      _sum: { amountCents: true },
+    }),
+    prisma.budgetEntry.aggregate({ where: { budgetId }, _sum: { amountCents: true } }),
     // Ready-to-Assign lines of split transactions (categoryId null = the income part of a split
-    // deposit). Parent filters mirror the INCOME-row filters below: not deleted, not pending.
+    // deposit). Parent filters mirror the INCOME-row filters above: not deleted, not pending.
+    // Splits are rare relative to transactions, so fetching the RTA lines stays cheap.
     prisma.transactionSplit.findMany({
       where: { budgetId, categoryId: null, transaction: { deletedAt: null, pending: false } },
       select: { amountCents: true, transaction: { select: { accountId: true } } },
@@ -27,9 +40,7 @@ export async function getSidebarData() {
   ]);
   const acctBalance: Record<string, number> = {};
   accounts.forEach((a) => (acctBalance[a.id] = 0));
-  transactions.forEach((t) => {
-    acctBalance[t.accountId] = (acctBalance[t.accountId] || 0) + t.amountCents;
-  });
+  balanceByAccount.forEach((g) => (acctBalance[g.accountId] = g._sum.amountCents ?? 0));
   const netWorth = Object.values(acctBalance).reduce((a, b) => a + b, 0);
 
   // Ready-to-Assign mirrors computeDerived: totalIncome - totalAssigned, both all-time aggregates
@@ -38,11 +49,9 @@ export async function getSidebarData() {
   // KEEP IN SYNC with the totalIncome computation in computeDerived (src/lib/budget.ts).
   const offBudget = new Set(accounts.filter((a) => !a.onBudget).map((a) => a.id));
   const totalIncome =
-    transactions
-      .filter((t) => t.kind === "INCOME" && !t.pending && !offBudget.has(t.accountId))
-      .reduce((s, t) => s + t.amountCents, 0) +
+    incomeByAccount.filter((g) => !offBudget.has(g.accountId)).reduce((s, g) => s + (g._sum.amountCents ?? 0), 0) +
     rtaSplitLines.filter((l) => !offBudget.has(l.transaction.accountId)).reduce((s, l) => s + l.amountCents, 0);
-  const totalAssigned = budgetEntries.reduce((s, b) => s + b.amountCents, 0);
+  const totalAssigned = entriesAgg._sum.amountCents ?? 0;
   const readyToAssign = totalIncome - totalAssigned;
 
   return { accounts, acctBalance, netWorth, readyToAssign };

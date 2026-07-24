@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, CheckCheck, Trash2, Scale, Upload, Undo2, ChevronLeft, ChevronRight } from "lucide-react";
-import { fmt, dateLabel, TXN_GRID } from "@/lib/format";
+import { fmt, dateLabel, todayLocal, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
 import { splitsSumToParent } from "@/lib/splits";
 import { deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
@@ -270,7 +270,7 @@ export function AccountsView({
             allowTransfer
             saveLabel="Add"
             initial={{
-              date: new Date().toISOString().slice(0, 10),
+              date: todayLocal(),
               payee: "",
               categoryId: "",
               accountId: accountFilter !== "all" ? accountFilter : accounts[0]?.id || "",
@@ -369,6 +369,10 @@ export function AccountsView({
                   title="Delete"
                   onClick={async (e) => {
                     e.stopPropagation();
+                    // One click was irreversible (and deletes BOTH legs of a transfer) while
+                    // undo-import asked first — backwards. Same confirm treatment now.
+                    const what = transfer ? "this transfer (both legs)" : `"${t.payee || catName(t)}" (${fmt(t.amountCents)})`;
+                    if (!window.confirm(`Delete ${what}?`)) return;
                     await deleteTransaction(t.id);
                     router.refresh();
                   }}

@@ -37,6 +37,9 @@ export function TxnEditorRow({
   const [amount, setAmount] = useState(initial.amount);
   const [memo, setMemo] = useState(initial.memo || "");
   const [err, setErr] = useState(false);
+  // In-flight guard: a fast double-click on Save must not fire the action twice (a transfer
+  // add would create two leg pairs — there's no server-side idempotency token).
+  const [busy, setBusy] = useState(false);
   // Split-mode state: unsigned per-line drafts + one direction toggle that signs them all
   // (mixed-sign splits are out of scope — one bank movement has one direction).
   const [lines, setLines] = useState<SplitLineDraft[]>(initial.splits?.length ? initial.splits : [blankLine(), blankLine()]);
@@ -103,11 +106,24 @@ export function TxnEditorRow({
       });
       if (!v.ok) return fail(v.reason);
     }
-    const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo, splits: isSplit ? lines : undefined, splitDirection: isSplit ? direction : undefined });
-    if (ok) onClose();
-    else {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo, splits: isSplit ? lines : undefined, splitDirection: isSplit ? direction : undefined });
+      if (ok) {
+        onClose();
+        return;
+      }
       setErr(true);
       setTimeout(() => setErr(false), 1200);
+    } catch {
+      // A thrown action (network drop, suspended session) previously became an unhandled
+      // rejection with a dead-looking button; surface it instead.
+      showToast("Couldn't save — check your connection and try again.");
+      setErr(true);
+      setTimeout(() => setErr(false), 1200);
+    } finally {
+      setBusy(false);
     }
   };
   const key = (e: KeyboardEvent) => {
@@ -177,7 +193,7 @@ export function TxnEditorRow({
           style={{ color: isIncome || (isSplit && direction === "inflow") ? "var(--posInk)" : "var(--ink)" }}
         />
         <div className={styles.actions}>
-          <button onClick={submit} disabled={isSplit && remainderCents !== 0} title={`${saveLabel} (Enter)`} className={styles.saveBtn}>
+          <button onClick={submit} disabled={busy || (isSplit && remainderCents !== 0)} title={`${saveLabel} (Enter)`} className={styles.saveBtn}>
             <Check size={15} strokeWidth={3} /> {saveLabel}
           </button>
           <button onClick={onClose} title="Cancel (Esc)" className={`${styles.iconBtn} ${styles.cancel}`}>

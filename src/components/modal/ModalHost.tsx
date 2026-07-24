@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { ModalState } from "./ModalContext";
 import { AccountModal } from "./AccountModal";
 import { GroupModal } from "./GroupModal";
@@ -12,9 +13,19 @@ import { ReconcileModal } from "./ReconcileModal";
 import { ImportModal } from "./ImportModal";
 
 export function ModalHost({ modal, close }: { modal: NonNullable<ModalState>; close: () => void }) {
+  // Escape closes any modal — matching TxnEditorRow's keyboard behavior. (Full focus trapping is
+  // still a gap; this at least gives keyboard users a way OUT.)
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [close]);
+
   return (
     <div className="modal-bg" onClick={close}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {modal.type === "account" && <AccountModal close={close} />}
         {modal.type === "group" && <GroupModal close={close} />}
         {modal.type === "category" && <CategoryModal close={close} groupId={modal.groupId} />}

@@ -54,7 +54,11 @@
   gap: 8px;
 }
 .tableCard {
-  overflow: hidden;
+  /* Horizontal scroll, not clipping: the register grid is ~630px of fixed columns — on a narrow
+     window `overflow: hidden` cut the Amount and Approve/Delete columns off with no way to reach
+     them. Vertical stays hidden so the card keeps its rounded corners. */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .headerRow {
   display: grid;
@@ -155,14 +159,6 @@
   display: flex;
   gap: 6px;
   justify-content: flex-end;
-}
-.clearToggle {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  color: #fff;
 }
 /* Per-row one-click approve for a pending row that already has a category (accepts the guess). */
 .approveBtn {
