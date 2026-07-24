@@ -107,20 +107,10 @@
   justify-content: center;
   width: 100%;
 }
-.userBox {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
+.identity {
+  margin: -8px 4px 0;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
-}
-.user {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 4px;
-}
-.userName {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);

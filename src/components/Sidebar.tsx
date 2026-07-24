@@ -56,6 +56,12 @@ export function Sidebar({
         </div>
       </div>
 
+      {userName && (
+        <div className={styles.identity} title={userName}>
+          {userName}
+        </div>
+      )}
+
       <Link href="/budget" className={styles.rta} style={{ borderColor: rtaColor }}>
         <span className="eyebrow" style={{ color: rtaColor }}>{rtaLabel}</span>
         <span className={`num ${styles.rtaNum}`} style={{ color: rtaState === "neg" ? "var(--neg)" : "var(--ink)" }}>
@@ -131,18 +137,11 @@ export function Sidebar({
       )}
 
       {showAuth && (
-        <div className={styles.userBox}>
-          {userName && (
-            <div className={styles.user} title={userName}>
-              <span className={styles.userName}>{userName}</span>
-            </div>
-          )}
-          <form action={signOutAction}>
-            <button type="submit" className={`btn btn-ghost ${styles.fullBtn}`}>
-              <LogOut size={14} /> Sign out
-            </button>
-          </form>
-        </div>
+        <form action={signOutAction}>
+          <button type="submit" className={`btn btn-ghost ${styles.fullBtn}`}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </form>
       )}
     </aside>
   );
