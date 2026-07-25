@@ -55,7 +55,9 @@ export function TxnEditorRow({
   const isTransfer = categoryId.startsWith(TRANSFER_PREFIX);
   const isSplit = categoryId === "split";
   const accountType = accounts.find((a) => a.id === accountId)?.type;
-  // RTA (income) split lines are forbidden on credit cards — see validateSplitDraft.
+  // Income/RTA is forbidden on credit cards everywhere (whole-row AND split lines): the engine
+  // deliberately doesn't model income-on-card (documented double-count), and it flips the card
+  // balance positive instead of growing the debt. See validateSplitDraft + the action guards.
   const allowRtaLine = accountType !== "CREDIT";
 
   // Left to allocate across lines; Save stays disabled until it's exactly zero.
@@ -116,6 +118,9 @@ export function TxnEditorRow({
     if (!isIncome && !isTransfer && !isSplit && categoryId === "" && !allowUncategorized) {
       return fail("Add a category before approving this transaction.");
     }
+    if (isIncome && !allowRtaLine) {
+      return fail("Income can't be recorded on a credit card — record it on the account the money actually landed in.");
+    }
     if (isSplit) {
       // The exact validator the server runs (resolveSplitValidation) — same rules, immediate reason.
       // `categories` is already payment-category-free (the picker never offers them), so the
@@ -171,7 +176,7 @@ export function TxnEditorRow({
         />
         <div className={styles.catCell}>
           <select aria-label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={styles.input}>
-            <option value="income">Inflow: Ready to Assign</option>
+            {allowRtaLine && <option value="income">Inflow: Ready to Assign</option>}
             <option value="">Uncategorized</option>
             <option value="split">Split across categories…</option>
             <optgroup label="Category">

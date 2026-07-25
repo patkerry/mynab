@@ -195,3 +195,13 @@ test("an uncategorized system row (starting balance) can be edited and re-saved"
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".row-hover", { hasText: "Starting Balance" }).filter({ hasText: "-$500.00" }).first()).toBeVisible({ timeout: 10_000 });
 });
+
+test("income can't be recorded on a credit card (the double-count foot-gun)", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  // On the default (checking) account the income option exists…
+  await expect(page.getByLabel("Category").locator('option[value="income"]')).toHaveCount(1);
+  // …switch the account to the credit card and it disappears.
+  await page.getByLabel("Account").selectOption({ label: "Visa Credit Card" });
+  await expect(page.getByLabel("Category").locator('option[value="income"]')).toHaveCount(0);
+});

@@ -184,8 +184,13 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
       }),
     ]);
   } else if (d.kind === "income") {
-    const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } });
+    const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true, type: true } });
     if (!acct) return false;
+    // Income directly on a credit card is the documented double-count edge the engine refuses to
+    // model (see ARCHITECTURE.md): it inflates Ready to Assign AND pushes the card balance
+    // positive instead of increasing the debt. The split validator already forbids RTA lines on
+    // cards; the plain editor gets the same rule (mirrored client-side in TxnEditorRow).
+    if (acct.type === "CREDIT") return false;
     await prisma.transaction.create({
       data: {
         budgetId,
@@ -273,7 +278,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   // The edited row and its new account must both belong to the active budget.
   const [owned, acct] = await Promise.all([
     prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true, categoryId: true } }),
-    prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } }),
+    prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true, type: true } }),
   ]);
   if (!owned || !acct) return false;
 
@@ -325,6 +330,8 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       }),
     ]);
   } else if (d.kind === "income") {
+    // Same credit-card rule as addTransaction: income on a card double-counts.
+    if (acct.type === "CREDIT") return false;
     await prisma.$transaction([
       prisma.transactionSplit.deleteMany({ where: { transactionId: id } }),
       prisma.transaction.update({
