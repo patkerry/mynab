@@ -134,6 +134,7 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
   // One id shared by every row of this import, so "undo import" can remove the whole batch at once
   // (see undoImport in accounts/actions.ts).
   const importBatchId = uid("imp");
+  const isCreditAccount = account.type === "CREDIT";
 
   // The whole insert is ONE transaction: a failure partway (e.g. a unique-constraint hit from a
   // concurrent overlapping import racing past the pre-filter above) must not leave a half-imported
@@ -146,7 +147,9 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
       const chunk = toInsert.slice(i, i + CHUNK);
       const result = await tx.transaction.createMany({
         data: chunk.map((r) => {
-          const categoryId = guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
+          const isIncome = r.amountCents > 0 && !isCreditAccount;
+          // Guessing is outflow-only anyway, but never let an INCOME row carry a category.
+          const categoryId = isIncome ? null : guessCategoryId(r.payee, r.memo, r.amountCents, history, seed);
           if (categoryId) guessedCount++;
           return {
             budgetId,
@@ -154,7 +157,14 @@ export async function runImport(budgetId: string, accountId: string, fileText: s
             date: r.date,
             payee: r.payee,
             memo: r.memo,
-            kind: "NORMAL" as const,
+            // A positive bank amount is almost always money IN — a paycheck, e-transfer, rebate.
+            // Landing it as (pending) INCOME means approving it feeds Ready to Assign, which is
+            // what users expect of imported pay; review can still flip one to a categorized
+            // refund. Before this, imported paychecks sat as NORMAL rows forever and RTA never
+            // moved — "all money assigned is broken" from the user's chair. Credit cards are the
+            // exception (income-on-card is the documented double-count): positive card rows stay
+            // NORMAL (payments/refunds), matched or categorized during review.
+            kind: isIncome ? ("INCOME" as const) : ("NORMAL" as const),
             categoryId,
             amountCents: r.amountCents,
             // Cleared-but-pending on import (see IMPORTED_TXN_STATE): an export only contains

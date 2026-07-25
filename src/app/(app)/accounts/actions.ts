@@ -430,9 +430,9 @@ export async function approvePending(ids: string[]): Promise<{ approved: number 
   const { budgetId } = await requireBudget("write");
   if (ids.length === 0) return { approved: 0 };
   const fetched = await prisma.transaction.findMany({
-    // "Has a category" now means either a direct categoryId or split lines — a split row IS
-    // categorized (it has several), so it's bulk-approvable like any other categorized row.
-    where: { id: { in: ids }, budgetId, pending: true, OR: [{ categoryId: { not: null } }, { splits: { some: {} } }] },
+    // Approvable = has a direct category, OR split lines (categorized several times over), OR is
+    // imported INCOME (needs no category — approving feeds Ready to Assign).
+    where: { id: { in: ids }, budgetId, pending: true, OR: [{ categoryId: { not: null } }, { splits: { some: {} } }, { kind: "INCOME" }] },
     select: { id: true, accountId: true, categoryId: true, date: true, amountCents: true, splits: { select: { categoryId: true, amountCents: true } } },
   });
   // Never approve an incoherent split: if its lines don't sum to the parent amount, approving

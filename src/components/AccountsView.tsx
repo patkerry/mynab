@@ -54,11 +54,13 @@ export function AccountsView({
   const { showToast } = useToast();
   const run = useRunAction();
 
-  // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess) —
-  // or split lines that sum exactly to the row's total (an incoherent split must be re-edited,
-  // never approved; approvePending re-checks the same rule server-side).
+  // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess),
+  // or split lines that sum exactly to the row's total, or when it's imported INCOME (which needs
+  // no category — approving it feeds Ready to Assign). approvePending mirrors all three rules.
   const approvable = (t: TransactionWithSplits) =>
-    t.pending && t.kind === "NORMAL" && (t.categoryId !== null || (t.splits.length > 0 && splitsSumToParent(t.amountCents, t.splits)));
+    t.pending &&
+    (t.kind === "INCOME" ||
+      (t.kind === "NORMAL" && (t.categoryId !== null || (t.splits.length > 0 && splitsSumToParent(t.amountCents, t.splits)))));
   const approvableIds = transactions.filter(approvable).map((t) => t.id);
   const toggleSel = (id: string) =>
     setSelected((prev) => {

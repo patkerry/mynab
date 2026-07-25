@@ -100,17 +100,34 @@ test("creating a split via the editor enforces exact-sum before Save enables", a
   await expect(row).toContainText("Split (2)");
 });
 
-test("import → pending rows land tan → approving one shrinks the pending pile", async ({ page }) => {
+test("import → pending rows land tan; income imports feed RTA on approve", async ({ page }) => {
+  const rta = () => page.locator("aside a", { hasText: /Ready to Assign|Money Assigned|Over-Assigned/ }).locator(".num");
   await page.goto("/accounts?account=all&category=all");
+  const rtaBefore = await rta().textContent();
+
   await page.getByRole("button", { name: "Import", exact: true }).click();
   const modal = page.locator(".modal"); // scope EVERYTHING to the modal (ARCHITECTURE.md lesson)
-  const csv = "Date,Payee,Amount,Memo\n2026-07-20,E2E IMPORT ONE,-12.34,\n2026-07-21,E2E IMPORT TWO,-8.66,";
+  const csv = "Date,Payee,Amount,Memo\n2026-07-20,E2E IMPORT ONE,-12.34,\n2026-07-21,E2E IMPORT TWO,-8.66,\n2026-07-22,E2E PAYCHECK,1000.00,";
   await modal.locator("textarea").fill(csv);
   await modal.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.locator(".row-hover", { hasText: "E2E IMPORT ONE" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("2 pending — needs approval")).toBeVisible();
+  await expect(page.getByText("3 pending — needs approval")).toBeVisible();
 
-  // Categorize + approve one via the editor (saving IS the approval).
+  // A positive imported amount lands as pending INCOME — shown as Ready to Assign, but it must
+  // NOT count toward RTA until approved.
+  await expect(page.locator(".row-hover", { hasText: "E2E PAYCHECK" })).toContainText("Ready to Assign");
+  await expect(rta()).toHaveText(rtaBefore!);
+
+  // One-click approve the paycheck (income needs no category) → RTA rises by exactly $1,000.
+  const paycheckRow = page.locator(".row-hover", { hasText: "E2E PAYCHECK" });
+  await paycheckRow.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText("2 pending — needs approval")).toBeVisible();
+  const parse = (t: string | null) => Math.round(parseFloat(t!.replace(/[^0-9.-]/g, "")) * 100);
+  await expect
+    .poll(async () => parse(await rta().textContent()))
+    .toBe(parse(rtaBefore) + 100000);
+
+  // Categorize + approve an outflow via the editor (saving IS the approval).
   await page.locator(".row-hover", { hasText: "E2E IMPORT ONE" }).click();
   await page.getByLabel("Category").selectOption({ label: "Groceries" });
   await page.getByRole("button", { name: "Approve", exact: true }).click();
