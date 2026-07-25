@@ -12,6 +12,7 @@
     "test": "npm run check:schema-parity && vitest run",
     "test:e2e": "playwright test",
     "demo:video": "playwright test -c playwright.demo.config.ts",
+    "demo:narrated": "tsx demo/gen-narration.ts && DEMO_NARRATED=1 playwright test -c playwright.demo.config.ts && tsx demo/mux.ts",
     "check:schema-parity": "tsx scripts/check-schema-parity.ts",
     "db:generate": "prisma generate --schema prisma/schema.postgres.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
     "admin:set": "tsx scripts/set-admin.ts",
@@ -48,6 +49,7 @@
     "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "ffmpeg-static": "^5.3.0",
     "playwright": "^1.61.1",
     "prisma": "^7.8.0",
     "tsx": "^4.23.1",
@@ -101,6 +103,7 @@
   },
   "allowScripts": {
     "@prisma/engines@7.8.0": true,
+    "ffmpeg-static@5.3.0": true,
     "better-sqlite3@12.11.1": true,
     "electron-winstaller@5.4.0": true,
     "esbuild@0.28.1": true,

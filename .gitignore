@@ -72,3 +72,4 @@ next-env.d.ts
 # demo video artifacts
 /demo-results
 /demo/out
+/demo/narration
