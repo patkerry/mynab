@@ -189,13 +189,16 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
   const cat = await prisma.category.findFirst({ where: { id: categoryId, budgetId }, select: { name: true, linkedAccountId: true } });
   if (!cat) return { ok: false, reason: "Category not found." };
   if (cat.linkedAccountId != null) return { ok: false, reason: "Credit-card payment categories are managed automatically and can't be deleted." };
-  const [txnCount, entryCount] = await Promise.all([
+  const [txnCount, entryCount, splitCount] = await Promise.all([
     prisma.transaction.count({ where: { categoryId } }),
     prisma.budgetEntry.count({ where: { categoryId } }),
+    // Split lines reference categories too (Restrict FK) — without this a category used only
+    // inside splits passed the friendly check and then hit a raw DB error instead.
+    prisma.transactionSplit.count({ where: { categoryId } }),
   ]);
-  if (txnCount > 0 || entryCount > 0) {
+  if (txnCount > 0 || entryCount > 0 || splitCount > 0) {
     const parts: string[] = [];
-    if (txnCount > 0) parts.push(`${txnCount} transaction${txnCount > 1 ? "s" : ""}`);
+    if (txnCount + splitCount > 0) parts.push(`${txnCount + splitCount} transaction${txnCount + splitCount > 1 ? "s" : ""}`);
     if (entryCount > 0) parts.push(`${entryCount} month${entryCount > 1 ? "s" : ""} of budget history`);
     return { ok: false, reason: `Can't delete "${cat.name}" — it has ${parts.join(" and ")}. Hide it instead to keep your history intact.` };
   }
