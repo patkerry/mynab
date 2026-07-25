@@ -108,6 +108,15 @@ export const RECIPES: Recipe[] = [
     ],
   },
   {
+    q: "How do I fix a wrong starting balance?",
+    keywords: "starting balance opening wrong sign fix edit mistake adjust",
+    steps: [
+      <>Click the <em>Starting Balance</em> row in <UI>Transactions</UI>, fix the amount (use the <UI>\u2212</UI>/<UI>+</UI> button if the sign is wrong), and save — no category needed.</>,
+      <>If the row is gone entirely, don&rsquo;t re-type it: use <UI>Adjust balance</UI> on the account and enter what the bank says — the app adds the correction for you.</>,
+      <>Worst case, hover the account in the sidebar, click the pencil, delete it, and add it fresh with the right balance.</>,
+    ],
+  },
+  {
     q: "How do I check an account against my bank?",
     keywords: "reconcile adjust balance bank statement match verify",
     steps: [
