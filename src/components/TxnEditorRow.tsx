@@ -17,6 +17,7 @@ export function TxnEditorRow({
   categories,
   initial,
   allowTransfer = true,
+  allowUncategorized = false,
   saveLabel = "Save",
   onSubmit,
   onClose,
@@ -25,6 +26,10 @@ export function TxnEditorRow({
   categories: Category[];
   initial: TxnDraft;
   allowTransfer?: boolean;
+  // True only when editing a row that is ALREADY uncategorized and approved (starting balances,
+  // reconciliation adjustments) — those system rows may stay uncategorized on save. Mirrors the
+  // server rule in updateTransaction.
+  allowUncategorized?: boolean;
   // Label for the confirm button — e.g. "Approve" when saving approves a pending imported row.
   saveLabel?: string;
   onSubmit: (draft: TxnDraft) => Promise<boolean>;
@@ -108,7 +113,7 @@ export function TxnEditorRow({
     // A NORMAL transaction needs a category to be saved/approved — enforced server-side in
     // addTransaction/updateTransaction too; checked here so the user gets an immediate, specific
     // reason instead of a generic error border after a round-trip. Income and transfers are exempt.
-    if (!isIncome && !isTransfer && !isSplit && categoryId === "") {
+    if (!isIncome && !isTransfer && !isSplit && categoryId === "" && !allowUncategorized) {
       return fail("Add a category before approving this transaction.");
     }
     if (isSplit) {

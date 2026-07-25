@@ -298,6 +298,7 @@ export function AccountsView({
                 categories={categories}
                 allowTransfer
                 saveLabel={t.pending ? "Approve" : "Save"}
+                allowUncategorized={t.kind === "NORMAL" && t.categoryId === null && !t.pending && t.splits.length === 0}
                 initial={txnToDraft(t)}
                 onSubmit={async (draft) => {
                   const wasPending = t.pending;

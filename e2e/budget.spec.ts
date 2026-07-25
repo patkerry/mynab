@@ -182,3 +182,16 @@ test("double-clicking Add account creates exactly ONE account (in-flight guard)"
   await modal.getByRole("button", { name: "Confirm delete" }).click(); // step 2: confirm
   await expect(page.locator("aside").getByText("Dupe Test")).toHaveCount(0, { timeout: 10_000 });
 });
+
+test("an uncategorized system row (starting balance) can be edited and re-saved", async ({ page }) => {
+  // The seeded Visa "Starting Balance" is kind NORMAL with NO category — by design. The
+  // needs-a-category save rule used to make such rows permanently uneditable (a real user
+  // couldn't fix a starting balance entered with the wrong sign).
+  await page.goto("/accounts?account=all&category=all");
+  const row = page.locator(".row-hover", { hasText: "Starting Balance" }).filter({ hasText: "Visa" }).first();
+  await row.click();
+  // Change the amount and save WITHOUT picking a category — must succeed and stay uncategorized.
+  await page.getByLabel("Amount").fill("500.00");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "Starting Balance" }).filter({ hasText: "-$500.00" }).first()).toBeVisible({ timeout: 10_000 });
+});

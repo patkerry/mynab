@@ -272,7 +272,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
 
   // The edited row and its new account must both belong to the active budget.
   const [owned, acct] = await Promise.all([
-    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true } }),
+    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true, categoryId: true } }),
     prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true } }),
   ]);
   if (!owned || !acct) return false;
@@ -380,9 +380,15 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     if (d.categoryId && (await isPaymentCategory(d.categoryId, budgetId))) return false;
     // Saving is how a pending import gets approved (pending -> false), so a NORMAL transaction
     // must have a category to be saved: approving an uncategorized purchase would leave money
-    // that never shows up against any budget category. INCOME/TRANSFER take the branches above
-    // and are intentionally categoryId: null, so they're unaffected.
-    if (d.categoryId === null) return false;
+    // that never shows up against any budget category. ONE exception: a row that is ALREADY
+    // uncategorized and already approved — starting balances and reconciliation adjustments are
+    // legitimately uncategorized system rows, and without this they were permanently uneditable
+    // (a real user couldn't fix a starting balance entered with the wrong sign). A categorized
+    // row still can't be stripped of its category, and pending rows still require one to approve.
+    if (d.categoryId === null) {
+      const wasUncategorizedAndApproved = owned.categoryId === null && !owned.pending;
+      if (!wasUncategorizedAndApproved) return false;
+    }
     const categoryId = d.categoryId;
     await prisma.$transaction(async (tx) => {
       // Converting a split row back to a single category discards its lines.
