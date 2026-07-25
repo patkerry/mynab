@@ -10,6 +10,7 @@ import { CategoryModal } from "./CategoryModal";
 import { GoalModal } from "./GoalModal";
 import { EditCategoryModal } from "./EditCategoryModal";
 import { EditGroupModal } from "./EditGroupModal";
+import { EditAccountModal } from "./EditAccountModal";
 import { ResetModal } from "./ResetModal";
 import { ReconcileModal } from "./ReconcileModal";
 import { ImportModal } from "./ImportModal";
@@ -63,6 +64,7 @@ export function ModalHost({ modal, close }: { modal: NonNullable<ModalState>; cl
         {modal.type === "goal" && <GoalModal close={close} cat={modal.cat} />}
         {modal.type === "editCategory" && <EditCategoryModal close={close} cat={modal.cat} />}
         {modal.type === "editGroup" && <EditGroupModal close={close} group={modal.group} />}
+        {modal.type === "editAccount" && <EditAccountModal close={close} account={modal.account} />}
         {modal.type === "reset" && <ResetModal close={close} />}
         {modal.type === "reconcile" && (
           <ReconcileModal close={close} accountId={modal.accountId} accountName={modal.accountName} currentBalanceCents={modal.currentBalanceCents} />

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Tags, Plus, RotateCcw, CircleDot, CircleHelp, Shield, LogOut } from "lucide-react";
+import { Wallet, PiggyBank, CreditCard, TrendingUp, Landmark, LayoutGrid, ArrowLeftRight, PieChart, Tags, Plus, Pencil, RotateCcw, CircleDot, CircleHelp, Shield, LogOut } from "lucide-react";
 import { fmt } from "@/lib/format";
 import { useModal } from "./modal/ModalContext";
 import { signOutAction } from "@/app/auth-actions";
@@ -108,24 +108,33 @@ export function Sidebar({
           const bal = acctBalance[a.id] ?? 0;
           const active = onAccounts && currentAccount === a.id && currentCategory === "all";
           return (
-            <Link
-              key={a.id}
-              href={`/accounts?account=${a.id}&category=all`}
-              className={`navlink ${styles.acctLink}`}
-              style={{
-                background: active ? "var(--accentSoft)" : "transparent",
-                color: active ? "var(--accent)" : "var(--ink)",
-              }}
-            >
-              <I size={16} color={active ? "var(--accent)" : "var(--ink3)"} />
-              <span className={styles.acctName}>{a.name}</span>
-              <span
-                className={`num ${styles.acctBalance}`}
-                style={{ color: bal < 0 ? "var(--neg)" : active ? "var(--accent)" : "var(--ink2)" }}
+            <div key={a.id} className={styles.acctRow}>
+              <Link
+                href={`/accounts?account=${a.id}&category=all`}
+                className={`navlink ${styles.acctLink}`}
+                style={{
+                  background: active ? "var(--accentSoft)" : "transparent",
+                  color: active ? "var(--accent)" : "var(--ink)",
+                }}
               >
-                {fmt(bal)}
-              </span>
-            </Link>
+                <I size={16} color={active ? "var(--accent)" : "var(--ink3)"} />
+                <span className={styles.acctName}>{a.name}</span>
+                <span
+                  className={`num ${styles.acctBalance}`}
+                  style={{ color: bal < 0 ? "var(--neg)" : active ? "var(--accent)" : "var(--ink2)" }}
+                >
+                  {fmt(bal)}
+                </span>
+              </Link>
+              <button
+                onClick={() => openModal({ type: "editAccount", account: a })}
+                title="Rename or delete account"
+                aria-label={`Rename or delete ${a.name}`}
+                className={styles.acctEdit}
+              >
+                <Pencil size={12} />
+              </button>
+            </div>
           );
         })}
         <button className={`navlink ${styles.addBtn}`} onClick={() => openModal({ type: "account" })}>

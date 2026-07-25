@@ -12,6 +12,7 @@ export type ModalState =
   | { type: "goal"; cat: Category }
   | { type: "editCategory"; cat: Category }
   | { type: "editGroup"; group: CategoryGroup }
+  | { type: "editAccount"; account: Account }
   | { type: "reset" }
   | { type: "reconcile"; accountId: string; accountName: string; currentBalanceCents: number }
   | { type: "import"; accountId: string; accounts: Account[] }

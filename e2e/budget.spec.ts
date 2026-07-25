@@ -162,3 +162,23 @@ test("adjust balance: a mismatched bank balance creates a visible adjustment tra
   await modal.getByRole("button", { name: "Adjust balance", exact: true }).click();
   await expect(page.locator(".row-hover", { hasText: "Reconciliation Adjustment" })).toBeVisible({ timeout: 10_000 });
 });
+
+test("double-clicking Add account creates exactly ONE account (in-flight guard)", async ({ page }) => {
+  await page.goto("/budget");
+  await page.getByRole("button", { name: "Add account" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByLabel("Account name").fill("Dupe Test");
+  await modal.getByLabel("Current balance").fill("100");
+  // A real user on a slow server hammered this button and got three accounts. The ModalShell
+  // in-flight guard must swallow everything after the first click.
+  await modal.getByRole("button", { name: "Add account" }).click({ clickCount: 3, delay: 60 });
+  await expect(page.locator("aside").getByText("Dupe Test")).toHaveCount(1, { timeout: 10_000 });
+
+  // And the new account-edit affordance can clean a dupe up: delete it entirely.
+  const row = page.locator("aside div", { hasText: "Dupe Test" }).last();
+  await row.hover();
+  await page.getByLabel("Rename or delete Dupe Test").click();
+  await modal.getByRole("button", { name: /Delete account/ }).click(); // step 1: arm
+  await modal.getByRole("button", { name: "Confirm delete" }).click(); // step 2: confirm
+  await expect(page.locator("aside").getByText("Dupe Test")).toHaveCount(0, { timeout: 10_000 });
+});

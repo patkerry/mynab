@@ -77,6 +77,37 @@
   font-size: 12px;
   font-weight: 700;
 }
+/* Account row = the nav link plus a hover-revealed edit pencil beside it (a button can't nest
+   inside the Link). The pencil stays keyboard-reachable — opacity hides it visually but
+   :focus-visible brings it back. */
+.acctRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.acctRow .acctLink {
+  flex: 1;
+  min-width: 0;
+}
+.acctEdit {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink3);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.acctRow:hover .acctEdit,
+.acctEdit:focus-visible {
+  opacity: 1;
+}
+.acctEdit:hover {
+  background: var(--paper);
+  color: var(--accent);
+}
 .acctLink {
   gap: 9px;
   padding: 8px 8px;

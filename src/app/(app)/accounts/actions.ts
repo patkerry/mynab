@@ -591,6 +591,51 @@ export async function addAccount(input: { name: string; type: AccountType; balan
   revalidateAll();
 }
 
+export async function renameAccount(id: string, name: string): Promise<void> {
+  const { budgetId } = await requireBudget("write");
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await prisma.account.updateMany({ where: { id, budgetId }, data: { name: trimmed } });
+  revalidateAll();
+}
+
+export type DeleteAccountResult = { ok: true } | { ok: false; reason: string };
+
+// Deletes an account AND its entire history. Exists mostly for the duplicate-account case (a slow
+// server + repeated Add clicks used to create dupes) — but it works on any account, so it hard-
+// deletes with care for every FK the account touches:
+//   - its transactions go (splits cascade with them); this frees their externalIds, which is
+//     correct here — re-import dedup is scoped per account, and the account is ceasing to exist
+//   - transfer legs pair via transferId across accounts: the counterpart leg in the OTHER account
+//     is deleted too, so no orphaned half-transfers survive
+//   - a credit card's linked payment category dies with the account (schema cascade), but its
+//     BudgetEntry rows are Restrict — they're removed first, which also returns any money assigned
+//     to the card back to Ready to Assign
+//   - reconciliation history cascades with the account
+export async function deleteAccount(id: string): Promise<DeleteAccountResult> {
+  const { budgetId } = await requireBudget("manage");
+  const account = await prisma.account.findFirst({ where: { id, budgetId }, select: { id: true } });
+  if (!account) return { ok: false, reason: "Account not found." };
+
+  await prisma.$transaction(async (tx) => {
+    const legs = await tx.transaction.findMany({ where: { budgetId, accountId: id, transferId: { not: null } }, select: { transferId: true } });
+    const transferIds = [...new Set(legs.map((t) => t.transferId).filter((x): x is string => x !== null))];
+    if (transferIds.length > 0) {
+      await tx.transaction.deleteMany({ where: { budgetId, transferId: { in: transferIds } } });
+    }
+    await tx.transaction.deleteMany({ where: { budgetId, accountId: id } });
+
+    const payCat = await tx.category.findFirst({ where: { budgetId, linkedAccountId: id }, select: { id: true } });
+    if (payCat) {
+      await tx.budgetEntry.deleteMany({ where: { budgetId, categoryId: payCat.id } });
+      await tx.category.delete({ where: { id: payCat.id } });
+    }
+    await tx.account.delete({ where: { id } });
+  });
+  revalidateAll();
+  return { ok: true };
+}
+
 // Import CSV / QFX transactions into an account. Thin Server Action: authorize the active budget,
 // delegate the parsing + guessing + insertion to runImport (src/lib/import.ts), then revalidate.
 export async function importTransactions(accountId: string, fileText: string): Promise<ImportResult> {
