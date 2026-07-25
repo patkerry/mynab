@@ -12,7 +12,9 @@ export const TRANSFER_PREFIX = "transfer:";
 export const transferSentinel = (accountId: string) => TRANSFER_PREFIX + accountId;
 
 export type InterpretedDraft =
-  | { kind: "transfer"; toAccountId: string; cents: number } // cents > 0; legs are -cents / +cents
+  // cents > 0 (unsigned). `direction` is the CURRENT account's side: "outflow" (default) = money
+  // leaves this account for toAccountId; "inflow" = money arrives here FROM toAccountId.
+  | { kind: "transfer"; toAccountId: string; cents: number; direction: "inflow" | "outflow" }
   | { kind: "income"; cents: number; payee: string } // signed as entered (inflow positive)
   | { kind: "split"; cents: number; payee: string } // parent amount signed by splitDirection; line rules live in validateSplitDraft
   | { kind: "normal"; categoryId: string | null; cents: number; payee: string } // cents signed by draft.direction (outflow default)
@@ -31,7 +33,7 @@ export function interpretDraft(draft: TxnDraft): InterpretedDraft {
     if (!toAccountId || toAccountId === draft.accountId) {
       return { kind: "invalid", reason: "Can't transfer an account to itself — pick a different destination account." };
     }
-    return { kind: "transfer", toAccountId, cents };
+    return { kind: "transfer", toAccountId, cents, direction: draft.direction === "inflow" ? "inflow" : "outflow" };
   }
 
   if (draft.categoryId === "income") {

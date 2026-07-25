@@ -106,6 +106,55 @@ async function resolveSplitValidation(
   return { ok: true, lines: v.lines, totalCents: v.totalCents, lineCategoryIds };
 }
 
+// When a row becomes one leg of a transfer, the OTHER leg often already exists — both sides of a
+// real bank transfer arrive via import (checking −$X, card +$X). Creating a fresh counterpart in
+// that case DOUBLES the movement on the receiving account (a real user hit exactly this). So:
+// look for an existing, unlinked row in the counterpart account with the exact opposite amount
+// within a few days (imports of the same transfer can post on different dates; pending INCOME is
+// a candidate too — a paycheck-looking inbound row is often really a transfer), and CONVERT it
+// into the leg instead of creating one. Only creates a new row when nothing matches.
+async function matchOrCreateCounterpart(
+  tx: Prisma.TransactionClient,
+  args: { budgetId: string; accountId: string; counterpartAccountId: string; date: string; amountCents: number; memo: string; transferId: string }
+) {
+  const { budgetId, accountId, counterpartAccountId, date, amountCents, memo, transferId } = args;
+  const WINDOW_DAYS = 5;
+  const d = new Date(date + "T00:00:00");
+  const shift = (days: number) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + days);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  };
+  const candidates = await tx.transaction.findMany({
+    where: {
+      budgetId,
+      accountId,
+      deletedAt: null,
+      transferId: null,
+      kind: { in: ["NORMAL", "INCOME"] },
+      amountCents,
+      date: { gte: shift(-WINDOW_DAYS), lte: shift(WINDOW_DAYS) },
+    },
+    orderBy: { date: "asc" },
+  });
+  // Closest date wins; pending (imported, unreviewed) beats approved on a tie — that's the
+  // typical "other half of the import" case.
+  const dayDiff = (a: string) => Math.abs(new Date(a + "T00:00:00").getTime() - d.getTime());
+  candidates.sort((a, b) => dayDiff(a.date) - dayDiff(b.date) || Number(b.pending) - Number(a.pending));
+  const match = candidates[0];
+  if (match) {
+    await tx.transactionSplit.deleteMany({ where: { transactionId: match.id } });
+    await tx.transaction.update({
+      where: { id: match.id },
+      data: { kind: "TRANSFER", categoryId: null, payee: "", pending: false, cleared: true, transferId, counterpartAccountId },
+    });
+    return;
+  }
+  await tx.transaction.create({
+    data: { budgetId, accountId, date, payee: "", kind: "TRANSFER", categoryId: null, amountCents, cleared: true, memo, pending: false, transferId, counterpartAccountId },
+  });
+}
+
 export type PossibleDuplicate = { date: string; payee: string; amountCents: number };
 
 // Advisory-only check, called by the "Add transaction" UI before it saves — never blocks by
@@ -148,8 +197,11 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
     ]);
     if (!fromAcct || !toAcct) return false;
     const transferId = uid("xfer");
-    await prisma.$transaction([
-      prisma.transaction.create({
+    // direction is the CURRENT account's side: outflow = this account pays toId; inflow = money
+    // arrives here FROM toId (e.g. recording a card payment from the card's own register).
+    const myCents = d.direction === "inflow" ? d.cents : -d.cents;
+    await prisma.$transaction(async (tx) => {
+      await tx.transaction.create({
         data: {
           budgetId,
           accountId: draft.accountId,
@@ -160,29 +212,25 @@ export async function addTransaction(draft: TxnDraft): Promise<boolean> {
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: -d.cents,
+          amountCents: myCents,
           cleared: true,
           memo,
           transferId,
           counterpartAccountId: toId,
         },
-      }),
-      prisma.transaction.create({
-        data: {
-          budgetId,
-          accountId: toId,
-          date: draft.date,
-          payee: "",
-          kind: "TRANSFER",
-          categoryId: null,
-          amountCents: d.cents,
-          cleared: true,
-          memo,
-          transferId,
-          counterpartAccountId: draft.accountId,
-        },
-      }),
-    ]);
+      });
+      // Link the other side's existing row when it's already there (imports bring both halves);
+      // only create a fresh leg when nothing matches — see matchOrCreateCounterpart.
+      await matchOrCreateCounterpart(tx, {
+        budgetId,
+        accountId: toId,
+        counterpartAccountId: draft.accountId,
+        date: draft.date,
+        amountCents: -myCents,
+        memo,
+        transferId,
+      });
+    });
   } else if (d.kind === "income") {
     const acct = await prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true, type: true } });
     if (!acct) return false;
@@ -283,21 +331,22 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
   if (!owned || !acct) return false;
 
   if (d.kind === "transfer") {
-    // Convert this (normal/pending) row into a linked transfer: the edited row becomes the source
-    // leg and a matching counterpart leg is created in the destination account — the same two-leg
-    // shape addTransaction produces. One-way only: existing transfers are delete-only (never opened
-    // in the editor — see the row onClick guard in AccountsView), so there's no prior counterpart to
-    // reconcile here. Sign rules come from interpretDraft: positive amount, source = -cents,
-    // counterpart = +cents (e.g. a "transfer to credit card" lands as a payment on the card).
+    // Convert this (normal/pending) row into a linked transfer. The edited row becomes ONE leg —
+    // which side depends on the −/+ direction (outflow: money leaves this account; inflow: money
+    // arrived here, e.g. reviewing the card's imported "PAYMENT RECEIVED" row). The other leg is
+    // MATCHED to an existing unlinked row in the counterpart account when one exists (both halves
+    // of a real transfer usually arrive via import — creating a fresh leg then doubled the
+    // movement) and only created when nothing matches. Existing transfers stay delete-only.
     const toId = d.toAccountId;
     const toAcct = await prisma.account.findFirst({ where: { id: toId, budgetId }, select: { id: true } });
     if (!toAcct) return false;
     const transferId = uid("xfer");
-    await prisma.$transaction([
+    const myCents = d.direction === "inflow" ? d.cents : -d.cents;
+    await prisma.$transaction(async (tx) => {
       // Converting a (possibly split) row into a transfer discards its split lines — a transfer
       // is never split. Same cleanup in every non-split branch below.
-      prisma.transactionSplit.deleteMany({ where: { transactionId: id } }),
-      prisma.transaction.update({
+      await tx.transactionSplit.deleteMany({ where: { transactionId: id } });
+      await tx.transaction.update({
         where: { id },
         data: {
           date: draft.date,
@@ -305,30 +354,23 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           payee: "",
           kind: "TRANSFER",
           categoryId: null,
-          amountCents: -d.cents,
+          amountCents: myCents,
           memo,
           pending: false,
           transferId,
           counterpartAccountId: toId,
         },
-      }),
-      prisma.transaction.create({
-        data: {
-          budgetId,
-          accountId: toId,
-          date: draft.date,
-          payee: "",
-          kind: "TRANSFER",
-          categoryId: null,
-          amountCents: d.cents,
-          cleared: true,
-          memo,
-          pending: false,
-          transferId,
-          counterpartAccountId: draft.accountId,
-        },
-      }),
-    ]);
+      });
+      await matchOrCreateCounterpart(tx, {
+        budgetId,
+        accountId: toId,
+        counterpartAccountId: draft.accountId,
+        date: draft.date,
+        amountCents: -myCents,
+        memo,
+        transferId,
+      });
+    });
   } else if (d.kind === "income") {
     // Same credit-card rule as addTransaction: income on a card double-counts.
     if (acct.type === "CREDIT") return false;

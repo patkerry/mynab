@@ -20,7 +20,9 @@ describe("interpretDraft", () => {
   });
 
   it("parses a transfer, rejecting self-transfers and non-positive amounts", () => {
-    expect(interpretDraft(draft({ categoryId: transferSentinel("a_save") }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000 });
+    expect(interpretDraft(draft({ categoryId: transferSentinel("a_save") }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000, direction: "outflow" });
+    // Inflow = money arriving INTO the current account from the other one.
+    expect(interpretDraft(draft({ categoryId: transferSentinel("a_save"), direction: "inflow" }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000, direction: "inflow" });
     expect(interpretDraft(draft({ categoryId: transferSentinel("a_check") })).kind).toBe("invalid"); // self
     expect(interpretDraft(draft({ categoryId: transferSentinel("") })).kind).toBe("invalid"); // no target
     expect(interpretDraft(draft({ categoryId: transferSentinel("a_save"), amount: "-50" })).kind).toBe("invalid");

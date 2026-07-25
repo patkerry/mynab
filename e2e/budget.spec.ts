@@ -240,3 +240,35 @@ test("the −/+ toggle records a refund, and re-saving it keeps it an inflow", a
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".row-hover", { hasText: "E2E Refund" }).first()).toContainText("$15.00");
 });
+
+test("converting an imported row to a transfer LINKS the other account's matching row (no doubling)", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+
+  // Import the checking side of a card payment (−$200)…
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  const modal = page.locator(".modal");
+  await modal.locator("textarea").fill("Date,Payee,Amount,Memo\n2026-07-20,ONLINE TRANSFER OUT,-200.00,");
+  await modal.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "ONLINE TRANSFER OUT" })).toBeVisible({ timeout: 15_000 });
+
+  // …and the card side (+$200) — positive on a CREDIT account stays a NORMAL pending row.
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await modal.locator("select").selectOption({ label: "Visa Credit Card" });
+  await modal.locator("textarea").fill("Date,Payee,Amount,Memo\n2026-07-21,PAYMENT RECEIVED THANK YOU,200.00,");
+  await modal.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "PAYMENT RECEIVED" })).toBeVisible({ timeout: 15_000 });
+
+  // Convert the checking row into a transfer to the Visa (importing switched the register to the
+  // Visa filter — go back to all accounts first).
+  await page.goto("/accounts?account=all&category=all");
+  await page.locator(".row-hover", { hasText: "ONLINE TRANSFER OUT" }).click();
+  await page.getByLabel("Category").selectOption({ label: "Visa Credit Card" });
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+
+  // The imported card row was LINKED into the transfer — not duplicated: exactly one
+  // "Transfer to/from" pair, the PAYMENT RECEIVED payee is gone, and no pending remains.
+  await expect(page.getByText("Transfer to Visa Credit Card").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".row-hover", { hasText: "PAYMENT RECEIVED" })).toHaveCount(0);
+  await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
+  await expect(page.getByText("pending — needs approval")).toHaveCount(0);
+});

@@ -220,11 +220,19 @@ export function TxnEditorRow({
           ))}
         </select>
         <div className={styles.amountCell}>
-          {!isIncome && !isTransfer && (
+          {!isIncome && (
             <button
               type="button"
               onClick={() => setDirection(direction === "outflow" ? "inflow" : "outflow")}
-              title={direction === "outflow" ? "Money out (click for money in)" : "Money in (click for money out)"}
+              title={
+                isTransfer
+                  ? direction === "outflow"
+                    ? "Money leaves this account (click if it arrived here)"
+                    : "Money arrives into this account (click if it left here)"
+                  : direction === "outflow"
+                    ? "Money out (click for money in)"
+                    : "Money in (click for money out)"
+              }
               aria-label={direction === "outflow" ? "Direction: money out" : "Direction: money in"}
               className={`${styles.signBtn} ${direction === "inflow" ? styles.signIn : ""}`}
             >
@@ -237,7 +245,7 @@ export function TxnEditorRow({
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
             className={`num ${styles.input} ${styles.amount}`}
-            style={{ color: isIncome || (!isTransfer && direction === "inflow") ? "var(--posInk)" : "var(--ink)" }}
+            style={{ color: isIncome || direction === "inflow" ? "var(--posInk)" : "var(--ink)" }}
           />
         </div>
         <div className={styles.actions}>
