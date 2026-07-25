@@ -180,9 +180,10 @@ export async function renameGroup(groupId: string, name: string) {
 // auto-managed and never user-deletable. The transaction count deliberately includes soft-deleted
 // rows because the FK Restrict counts them too — filtering deletedAt: null here would let the
 // delete reach the DB and throw.
-// Delete only a category that has NO history — no transactions and no budget assignments. A category
-// that was ever spent in or assigned to would take its history with it (transactions are FK-Restricted;
-// budgetEntry rows cascade), silently changing past months. Anything with history must be HIDDEN
+// Delete only a category that has NO history — no transactions (direct or via split lines) and no
+// budget assignments. Every one of those references is FK-Restricted at the DB too (verified
+// empirically: a raw category.delete with a transaction attached is refused by the database), so
+// deleting a category can never take history with it. Anything with history must be HIDDEN
 // instead (a display-only toggle that preserves every number). Payment categories are never deletable.
 export async function deleteCategory(categoryId: string): Promise<ActionResult> {
   const { budgetId } = await requireBudget("write");
