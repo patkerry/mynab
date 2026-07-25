@@ -58,7 +58,7 @@ export const RECIPES: Recipe[] = [
     q: "How do I record a deposit that's part paycheck, part reimbursement?",
     keywords: "split income refund reimbursement deposit inflow mixed",
     steps: [
-      <>Enter the deposit, click the split button, and flip the toggle to <UI>Inflow</UI>.</>,
+      <>Enter the deposit, click the split button, and click the <UI>\u2212</UI> next to the amount so it flips to <UI>+</UI> (money in).</>,
       <>Point the paycheck part at <em>Inflow: Ready to Assign</em> and the reimbursement part back at the category you originally spent from.</>,
       <>One catch: on a credit card account every line needs a real category — no Ready to Assign lines there.</>,
     ],
@@ -139,7 +139,8 @@ export const RECIPES: Recipe[] = [
     q: "How do I handle a refund or return?",
     keywords: "refund return money back store credit",
     steps: [
-      <>Add a transaction on the account the money came back to, pick the category you originally spent from, and enter the amount as a positive inflow (income-style with the category set).</>,
+      <>Add a transaction on the account the money came back to and pick the category you originally spent from.</>,
+      <>Click the <UI>−</UI> button next to the amount so it flips to <UI>+</UI> (money in), enter the amount, save.</>,
       <>The category&rsquo;s Available goes back up — the refund undoes the spending, it isn&rsquo;t new income.</>,
     ],
   },

@@ -49,7 +49,10 @@ export function TxnEditorRow({
   // Split-mode state: unsigned per-line drafts + one direction toggle that signs them all
   // (mixed-sign splits are out of scope — one bank movement has one direction).
   const [lines, setLines] = useState<SplitLineDraft[]>(initial.splits?.length ? initial.splits : [blankLine(), blankLine()]);
-  const [direction, setDirection] = useState<"inflow" | "outflow">(initial.splitDirection ?? "outflow");
+  // Signs the whole row (and every split line): outflow = money out, inflow = money in. The −/+
+  // button beside the amount makes the direction VISIBLE — before, categorized amounts were
+  // silently treated as outflows, and re-saving an existing refund flipped it into spending.
+  const [direction, setDirection] = useState<"inflow" | "outflow">(initial.direction ?? "outflow");
 
   const isIncome = categoryId === "income";
   const isTransfer = categoryId.startsWith(TRANSFER_PREFIX);
@@ -76,6 +79,7 @@ export function TxnEditorRow({
     accountId !== (initial.accountId || accounts[0]?.id || "") ||
     amount !== initial.amount ||
     memo !== (initial.memo || "") ||
+    direction !== (initial.direction ?? "outflow") ||
     (isSplit && JSON.stringify(lines) !== JSON.stringify(initial.splits ?? [blankLine(), blankLine()]));
   const requestClose = () => {
     if (!dirty || window.confirm("Discard this transaction's unsaved changes?")) onClose();
@@ -138,7 +142,7 @@ export function TxnEditorRow({
     if (busy) return;
     setBusy(true);
     try {
-      const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo, splits: isSplit ? lines : undefined, splitDirection: isSplit ? direction : undefined });
+      const ok = await onSubmit({ date, payee, categoryId, accountId, amount, memo, splits: isSplit ? lines : undefined, direction });
       if (ok) {
         onClose();
         return;
@@ -215,14 +219,27 @@ export function TxnEditorRow({
             </option>
           ))}
         </select>
-        <input
-          aria-label="Amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="0.00"
-          className={`num ${styles.input} ${styles.amount}`}
-          style={{ color: isIncome || (isSplit && direction === "inflow") ? "var(--posInk)" : "var(--ink)" }}
-        />
+        <div className={styles.amountCell}>
+          {!isIncome && !isTransfer && (
+            <button
+              type="button"
+              onClick={() => setDirection(direction === "outflow" ? "inflow" : "outflow")}
+              title={direction === "outflow" ? "Money out (click for money in)" : "Money in (click for money out)"}
+              aria-label={direction === "outflow" ? "Direction: money out" : "Direction: money in"}
+              className={`${styles.signBtn} ${direction === "inflow" ? styles.signIn : ""}`}
+            >
+              {direction === "outflow" ? "−" : "+"}
+            </button>
+          )}
+          <input
+            aria-label="Amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            className={`num ${styles.input} ${styles.amount}`}
+            style={{ color: isIncome || (!isTransfer && direction === "inflow") ? "var(--posInk)" : "var(--ink)" }}
+          />
+        </div>
         <div className={styles.actions}>
           <button onClick={submit} disabled={busy || (isSplit && remainderCents !== 0)} title={`${saveLabel} (Enter)`} className={styles.saveBtn}>
             <Check size={15} strokeWidth={3} /> {saveLabel}
@@ -270,14 +287,6 @@ export function TxnEditorRow({
             <button onClick={() => setLines((prev) => [...prev, blankLine()])} className={styles.addLineBtn}>
               <Plus size={14} /> Add line
             </button>
-            <div className={styles.directionToggle}>
-              <button onClick={() => setDirection("outflow")} className={direction === "outflow" ? styles.dirActive : styles.dirBtn}>
-                Outflow
-              </button>
-              <button onClick={() => setDirection("inflow")} className={direction === "inflow" ? styles.dirActive : styles.dirBtn}>
-                Inflow
-              </button>
-            </div>
             <span className={`num ${styles.remainder}`} style={{ color: remainderCents === 0 ? "var(--pos)" : "var(--neg)" }}>
               {remainderCents === 0 ? "✓ fully allocated" : `${fmt(Math.abs(remainderCents))} ${remainderCents > 0 ? "left to allocate" : "over-allocated"}`}
             </span>

@@ -15,7 +15,7 @@ export type InterpretedDraft =
   | { kind: "transfer"; toAccountId: string; cents: number } // cents > 0; legs are -cents / +cents
   | { kind: "income"; cents: number; payee: string } // signed as entered (inflow positive)
   | { kind: "split"; cents: number; payee: string } // parent amount signed by splitDirection; line rules live in validateSplitDraft
-  | { kind: "normal"; categoryId: string | null; cents: number; payee: string } // cents already negated (outflow)
+  | { kind: "normal"; categoryId: string | null; cents: number; payee: string } // cents signed by draft.direction (outflow default)
   | { kind: "invalid"; reason: string };
 
 export function interpretDraft(draft: TxnDraft): InterpretedDraft {
@@ -38,12 +38,15 @@ export function interpretDraft(draft: TxnDraft): InterpretedDraft {
     return { kind: "income", cents, payee: draft.payee.trim() || "Income" };
   }
 
+  const sign = draft.direction === "inflow" ? 1 : -1;
+
   if (draft.categoryId === "split") {
     // The parent's sign comes from the direction toggle; the authoritative total is still
     // validateSplitDraft's (lines must sum to it) — this cents is for advisory uses like the
     // duplicate check.
-    return { kind: "split", cents: draft.splitDirection === "inflow" ? cents : -cents, payee: draft.payee.trim() || "Payee" };
+    return { kind: "split", cents: sign * cents, payee: draft.payee.trim() || "Payee" };
   }
 
-  return { kind: "normal", categoryId: draft.categoryId || null, cents: -cents, payee: draft.payee.trim() || "Payee" };
+  // A categorized inflow (direction "inflow" + category) is a refund; outflow is spending.
+  return { kind: "normal", categoryId: draft.categoryId || null, cents: sign * cents, payee: draft.payee.trim() || "Payee" };
 }

@@ -222,3 +222,21 @@ test("income can't be recorded on a credit card (the double-count foot-gun)", as
   await page.getByLabel("Account").selectOption({ label: "Visa Credit Card" });
   await expect(page.getByLabel("Category").locator('option[value="income"]')).toHaveCount(0);
 });
+
+test("the −/+ toggle records a refund, and re-saving it keeps it an inflow", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Payee").fill("E2E Refund");
+  await page.getByLabel("Category").selectOption({ label: "Groceries" });
+  await page.getByRole("button", { name: "Direction: money out" }).click(); // − → +
+  await page.getByLabel("Amount").fill("15.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const row = page.locator(".row-hover", { hasText: "E2E Refund" }).first();
+  await expect(row).toContainText("$15.00"); // positive — money came back
+
+  // Re-editing and saving unchanged must NOT flip it into spending (the old bug).
+  await row.click();
+  await expect(page.getByRole("button", { name: "Direction: money in" })).toBeVisible(); // sign preserved
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "E2E Refund" }).first()).toContainText("$15.00");
+});

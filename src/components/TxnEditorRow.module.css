@@ -69,23 +69,37 @@
   font-weight: 600;
   color: var(--accent);
 }
-.directionToggle {
-  display: inline-flex;
+.amountCell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.amountCell .amount {
+  flex: 1;
+  min-width: 0;
+}
+/* The −/+ direction toggle: − = money out (default), + = money in. */
+.signBtn {
+  flex: none;
+  width: 22px;
+  height: 30px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  overflow: hidden;
   background: var(--field);
-}
-.dirBtn,
-.dirActive {
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
   color: var(--ink2);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
 }
-.dirActive {
-  background: var(--accent);
-  color: #fff;
+.signBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.signIn {
+  background: var(--posSoft);
+  border-color: var(--pos);
+  color: var(--posInk);
 }
 .remainder {
   margin-left: auto;

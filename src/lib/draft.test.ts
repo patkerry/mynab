@@ -32,8 +32,8 @@ describe("interpretDraft", () => {
   });
 
   it("signs a split parent by its direction toggle (line rules live in validateSplitDraft)", () => {
-    expect(interpretDraft(draft({ categoryId: "split", splitDirection: "outflow" }))).toEqual({ kind: "split", cents: -5000, payee: "Test" });
-    expect(interpretDraft(draft({ categoryId: "split", splitDirection: "inflow" }))).toEqual({ kind: "split", cents: 5000, payee: "Test" });
+    expect(interpretDraft(draft({ categoryId: "split", direction: "outflow" }))).toEqual({ kind: "split", cents: -5000, payee: "Test" });
+    expect(interpretDraft(draft({ categoryId: "split", direction: "inflow" }))).toEqual({ kind: "split", cents: 5000, payee: "Test" });
     // No direction supplied defaults to outflow-signed, matching the editor's default.
     expect(interpretDraft(draft({ categoryId: "split" }))).toEqual({ kind: "split", cents: -5000, payee: "Test" });
   });
@@ -41,6 +41,10 @@ describe("interpretDraft", () => {
   it("parses a normal outflow, negating the amount and defaulting the payee", () => {
     expect(interpretDraft(draft({ categoryId: "c_groc" }))).toEqual({ kind: "normal", categoryId: "c_groc", cents: -5000, payee: "Test" });
     expect(interpretDraft(draft({ categoryId: "", payee: "" }))).toEqual({ kind: "normal", categoryId: null, cents: -5000, payee: "Payee" });
+  });
+
+  it("a normal row with direction inflow is a categorized inflow (refund) — positive cents", () => {
+    expect(interpretDraft(draft({ categoryId: "c_groc", direction: "inflow" }))).toEqual({ kind: "normal", categoryId: "c_groc", cents: 5000, payee: "Test" });
   });
 
   it("never mistakes a real category id for a sentinel", () => {

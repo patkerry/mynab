@@ -95,7 +95,7 @@ async function resolveSplitValidation(
   const cats = await prisma.category.findMany({ where: { budgetId }, select: { id: true, linkedAccountId: true } });
   const v = validateSplitDraft({
     lines: draft.splits ?? [],
-    direction: draft.splitDirection ?? "outflow",
+    direction: draft.direction ?? "outflow",
     parentAmount: draft.amount,
     accountType: account.type,
     paymentCategoryIds: new Set(cats.filter((c) => c.linkedAccountId != null).map((c) => c.id)),

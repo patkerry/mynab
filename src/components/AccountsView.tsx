@@ -127,7 +127,9 @@ export function AccountsView({
       t.splits.length > 0
         ? t.splits.map((s) => ({ categoryId: s.categoryId ?? "income", amount: (Math.abs(s.amountCents) / 100).toFixed(2), memo: s.memo || "" }))
         : undefined,
-    splitDirection: t.splits.length > 0 ? (t.amountCents >= 0 ? "inflow" : "outflow") : undefined,
+    // Preserve the row's real sign: re-saving a refund (positive NORMAL) must stay an inflow —
+    // it used to silently flip to spending because the editor assumed outflow.
+    direction: t.amountCents >= 0 ? "inflow" : "outflow",
   });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));

@@ -29,10 +29,11 @@ export type TxnDraft = {
   accountId: string;
   amount: string; // dollars, as typed by the user
   memo: string;
-  // Present iff categoryId === "split". Lines are unsigned; splitDirection signs them all
-  // (validateSplitDraft in src/lib/splits.ts is the single validation authority).
+  // Present iff categoryId === "split". Lines are unsigned (validateSplitDraft is the authority).
   splits?: SplitLineDraft[];
-  splitDirection?: "inflow" | "outflow";
+  // Signs the amount for NORMAL rows AND split lines: outflow (default) = money out, inflow =
+  // money in (a categorized inflow is a refund). Income/transfers carry their own fixed signs.
+  direction?: "inflow" | "outflow";
 };
 
 export type ImportResult =
