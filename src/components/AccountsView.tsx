@@ -6,6 +6,7 @@ import { Plus, X, CheckCheck, Trash2, Scale, Upload, Undo2, ChevronLeft, Chevron
 import { fmt, dateLabel, todayLocal, TXN_GRID } from "@/lib/format";
 import { transferLabel } from "@/lib/budget";
 import { splitsSumToParent } from "@/lib/splits";
+import { transferSentinel } from "@/lib/draft";
 import { deleteTransaction, addTransaction, updateTransaction, approvePending, getReconcileInfo, findPossibleDuplicate, undoImport } from "@/app/(app)/accounts/actions";
 import { TxnEditorRow } from "./TxnEditorRow";
 import { useModal } from "./modal/ModalContext";
@@ -118,7 +119,14 @@ export function AccountsView({
   const txnToDraft = (t: TransactionWithSplits): TxnDraft => ({
     date: t.date,
     payee: t.payee,
-    categoryId: t.splits.length > 0 ? "split" : t.kind === "INCOME" ? "income" : t.categoryId || "",
+    categoryId:
+      t.kind === "TRANSFER" && t.counterpartAccountId
+        ? transferSentinel(t.counterpartAccountId)
+        : t.splits.length > 0
+          ? "split"
+          : t.kind === "INCOME"
+            ? "income"
+            : t.categoryId || "",
     accountId: t.accountId,
     amount: (Math.abs(t.amountCents) / 100).toFixed(2),
     memo: t.memo || "",
@@ -302,6 +310,7 @@ export function AccountsView({
                 categories={categories}
                 allowTransfer
                 saveLabel={t.pending ? "Approve" : "Save"}
+                lockTransfer={t.kind === "TRANSFER"}
                 allowUncategorized={t.kind === "NORMAL" && t.categoryId === null && !t.pending && t.splits.length === 0}
                 initial={txnToDraft(t)}
                 onSubmit={async (draft) => {
@@ -322,24 +331,22 @@ export function AccountsView({
             <Fragment key={t.id}>
             <div
               className={t.pending ? `row-hover txn-pending ${styles.txnRow}` : `row-hover ${styles.txnRow} ${styles.approved}`}
-              role={transfer ? undefined : "button"}
-              tabIndex={transfer ? undefined : 0}
+              role="button"
+              tabIndex={0}
               onKeyDown={(e) => {
                 // Keyboard users could not open the editor at all — rows are divs, not buttons.
-                if (!transfer && (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
                   e.preventDefault();
                   setEditingId(t.id);
                   setAdding(false);
                 }
               }}
               onClick={() => {
-                if (!transfer) {
-                  setEditingId(t.id);
-                  setAdding(false);
-                }
+                setEditingId(t.id);
+                setAdding(false);
               }}
-              title={transfer ? "Transfers can't be edited inline — delete to remove both legs" : "Click to edit"}
-              style={{ gridTemplateColumns: TXN_GRID, cursor: transfer ? "default" : "pointer" }}
+              title={transfer ? "Click to edit — changes apply to BOTH legs of the transfer" : "Click to edit"}
+              style={{ gridTemplateColumns: TXN_GRID, cursor: "pointer" }}
             >
               <span className={`num ${styles.dateCell}`}>
                 {approvable(t) && (

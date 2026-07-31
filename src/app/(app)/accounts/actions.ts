@@ -325,10 +325,14 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
 
   // The edited row and its new account must both belong to the active budget.
   const [owned, acct] = await Promise.all([
-    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true, categoryId: true } }),
+    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true, categoryId: true, transferId: true } }),
     prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true, type: true } }),
   ]);
   if (!owned || !acct) return false;
+
+  // An existing transfer leg must stay a transfer — saving it as category/income/split would
+  // orphan its other leg. (The editor blocks this with a clear reason; this is the backstop.)
+  if (owned.transferId && d.kind !== "transfer") return false;
 
   if (d.kind === "transfer") {
     // Convert this (normal/pending) row into a linked transfer. The edited row becomes ONE leg —
@@ -340,8 +344,40 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     const toId = d.toAccountId;
     const toAcct = await prisma.account.findFirst({ where: { id: toId, budgetId }, select: { id: true } });
     if (!toAcct) return false;
-    const transferId = uid("xfer");
     const myCents = d.direction === "inflow" ? d.cents : -d.cents;
+
+    if (owned.transferId) {
+      // EDITING an existing transfer: both legs move together — date, memo, amount (signed by the
+      // −/+ direction from this leg's point of view), and destination (re-pointing the other leg
+      // to a different account). No matching here; the pair already exists.
+      const existingTransferId = owned.transferId;
+      await prisma.$transaction(async (tx) => {
+        await tx.transaction.update({
+          where: { id },
+          data: {
+            date: draft.date,
+            accountId: draft.accountId,
+            amountCents: myCents,
+            memo,
+            counterpartAccountId: toId,
+          },
+        });
+        await tx.transaction.updateMany({
+          where: { budgetId, transferId: existingTransferId, id: { not: id } },
+          data: {
+            date: draft.date,
+            accountId: toId,
+            amountCents: -myCents,
+            memo,
+            counterpartAccountId: draft.accountId,
+          },
+        });
+      });
+      revalidateAll();
+      return true;
+    }
+
+    const transferId = uid("xfer");
     await prisma.$transaction(async (tx) => {
       // Converting a (possibly split) row into a transfer discards its split lines — a transfer
       // is never split. Same cleanup in every non-split branch below.

@@ -18,6 +18,7 @@ export function TxnEditorRow({
   initial,
   allowTransfer = true,
   allowUncategorized = false,
+  lockTransfer = false,
   saveLabel = "Save",
   onSubmit,
   onClose,
@@ -30,6 +31,10 @@ export function TxnEditorRow({
   // reconciliation adjustments) — those system rows may stay uncategorized on save. Mirrors the
   // server rule in updateTransaction.
   allowUncategorized?: boolean;
+  // True when editing an EXISTING transfer leg: it can be re-pointed/re-signed/re-amounted (both
+  // legs update together) but never turned into a category/income row — that would orphan the
+  // other leg. Mirrors the server rule.
+  lockTransfer?: boolean;
   // Label for the confirm button — e.g. "Approve" when saving approves a pending imported row.
   saveLabel?: string;
   onSubmit: (draft: TxnDraft) => Promise<boolean>;
@@ -124,6 +129,9 @@ export function TxnEditorRow({
     }
     if (isIncome && !allowRtaLine) {
       return fail("Income can't be recorded on a credit card — record it on the account the money actually landed in.");
+    }
+    if (lockTransfer && !isTransfer) {
+      return fail("This is one leg of a transfer — it stays a transfer. Pick a destination account, or delete it (both legs go together).");
     }
     if (isSplit) {
       // The exact validator the server runs (resolveSplitValidation) — same rules, immediate reason.

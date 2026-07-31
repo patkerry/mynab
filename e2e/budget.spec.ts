@@ -272,3 +272,33 @@ test("converting an imported row to a transfer LINKS the other account's matchin
   await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
   await expect(page.getByText("pending — needs approval")).toHaveCount(0);
 });
+
+test("editing a transfer updates BOTH legs; saving it as a category is refused", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+
+  // Create a $100 checking → Visa transfer.
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Category").selectOption({ label: "Visa Credit Card" });
+  await page.getByLabel("Amount").fill("100.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Transfer to Visa Credit Card").first()).toBeVisible();
+
+  // Transfers are editable now: open the outbound leg and change the amount.
+  await page.locator(".row-hover", { hasText: "Transfer to Visa Credit Card" }).first().click();
+  await page.getByLabel("Amount").fill("150.00");
+
+  // A transfer leg can't be turned into a category row — clear refusal, editor stays open.
+  await page.getByLabel("Category").selectOption({ label: "Groceries" });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/stays a transfer/)).toBeVisible();
+
+  // Point it back at the Visa and save — both legs must now read $150.
+  await page.getByLabel("Category").selectOption({ label: "Visa Credit Card" });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "Transfer to Visa Credit Card" }).first()).toContainText("-$150.00", { timeout: 10_000 });
+  await page.goto("/accounts?account=all&category=all"); // fresh render
+  await expect(page.locator(".row-hover", { hasText: "Transfer from Everyday Checking" }).first()).toContainText("$150.00");
+  // Exactly one pair — editing must not have minted extra legs.
+  await expect(page.getByText("Transfer to Visa Credit Card")).toHaveCount(1);
+  await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
+});
