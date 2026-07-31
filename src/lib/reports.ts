@@ -7,10 +7,15 @@ import type { Transaction, Category, BudgetEntry, TransactionSplit } from "@/gen
 // formatter); the KPI summary returns cents (formatted with fmt() in the view).
 
 // A "spend" row: a NORMAL outflow with a category. Mirrors the classification the original reports
-// page used (income = INCOME kind, or a positive categorized NORMAL row).
-const isSpend = (t: Transaction) => t.kind === "NORMAL" && t.amountCents < 0 && t.categoryId !== null;
+// page used (income = INCOME kind, or a positive categorized NORMAL row). Pending (imported,
+// unreviewed) rows are excluded from BOTH — same contract as the budget engine, where pending is
+// invisible to everything except balances. Since imports land inflows as pending INCOME, counting
+// them here would inflate the income KPI the moment a file lands, days before the budget's RTA
+// moves at approval. netWorthTrend deliberately does NOT use these predicates: it's pure balance
+// math, and balances do include pending.
+const isSpend = (t: Transaction) => !t.pending && t.kind === "NORMAL" && t.amountCents < 0 && t.categoryId !== null;
 const isIncome = (t: Transaction) =>
-  t.kind === "INCOME" || (t.amountCents > 0 && t.kind === "NORMAL" && t.categoryId !== null);
+  !t.pending && (t.kind === "INCOME" || (t.amountCents > 0 && t.kind === "NORMAL" && t.categoryId !== null));
 
 // Fans split parents out into per-line pseudo-rows so every report above classifies them with the
 // SAME isSpend/isIncome predicates as unsplit rows: a categorized line becomes a NORMAL row tagged

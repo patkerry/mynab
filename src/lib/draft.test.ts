@@ -19,13 +19,24 @@ describe("interpretDraft", () => {
     }
   });
 
-  it("parses a transfer, rejecting self-transfers and non-positive amounts", () => {
+  it("parses a transfer, rejecting self-transfers", () => {
     expect(interpretDraft(draft({ categoryId: transferSentinel("a_save") }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000, direction: "outflow" });
     // Inflow = money arriving INTO the current account from the other one.
     expect(interpretDraft(draft({ categoryId: transferSentinel("a_save"), direction: "inflow" }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000, direction: "inflow" });
     expect(interpretDraft(draft({ categoryId: transferSentinel("a_check") })).kind).toBe("invalid"); // self
     expect(interpretDraft(draft({ categoryId: transferSentinel("") })).kind).toBe("invalid"); // no target
-    expect(interpretDraft(draft({ categoryId: transferSentinel("a_save"), amount: "-50" })).kind).toBe("invalid");
+    // A typed minus never signs a transfer — cents are absolute, direction picks the side.
+    expect(interpretDraft(draft({ categoryId: transferSentinel("a_save"), amount: "-50" }))).toEqual({ kind: "transfer", toAccountId: "a_save", cents: 5000, direction: "outflow" });
+  });
+
+  it("the direction toggle is the ONLY sign authority — a typed minus never double-negates", () => {
+    // Regression: toggle on "−" (outflow) + typed "-45.00" used to save a +$45 refund
+    // (−1 × −4500). The typed sign is absolute-valued away; direction alone signs the result.
+    expect(interpretDraft(draft({ categoryId: "c_groc", amount: "-45.00" }))).toEqual({ kind: "normal", categoryId: "c_groc", cents: -4500, payee: "Test" });
+    expect(interpretDraft(draft({ categoryId: "c_groc", amount: "-45.00", direction: "inflow" }))).toEqual({ kind: "normal", categoryId: "c_groc", cents: 4500, payee: "Test" });
+    expect(interpretDraft(draft({ categoryId: "split", amount: "-45.00" }))).toEqual({ kind: "split", cents: -4500, payee: "Test" });
+    // Income is always a positive inflow — a typed minus can't create RTA-draining negative income.
+    expect(interpretDraft(draft({ categoryId: "income", amount: "-45.00" }))).toEqual({ kind: "income", cents: 4500, payee: "Test" });
   });
 
   it("parses income with the Payer default", () => {

@@ -16,7 +16,12 @@ test.beforeEach(() => {
 // The sidebar RTA card (Link to /budget, label + amount) — the sidebar computes RTA with a
 // DUPLICATED formula (getSidebarData), so agreeing with the budget page's banner is a real
 // regression check, not a tautology.
-const sidebarRta = (page: Page) => page.locator("aside a", { hasText: "Ready to Assign" }).locator(".num");
+//
+// Every sidebar locator filters to :visible — after a client-invoked refresh, Next's dev
+// server can briefly retain the PREVIOUS render of the layout as hidden DOM, and a strict-mode
+// locator then matches both the fresh and the stale copy (a real, order-dependent flake in
+// full-suite runs; invisible to the a11y snapshot because the stale copy is hidden).
+const sidebarRta = (page: Page) => page.locator("aside a:visible", { hasText: "Ready to Assign" }).locator(".num");
 const bannerRta = (page: Page) => page.locator(".card", { hasText: "all months" }).locator(".num");
 
 test("sidebar Ready-to-Assign equals the budget banner (duplicated formula stays in sync)", async ({ page }) => {
@@ -101,7 +106,7 @@ test("creating a split via the editor enforces exact-sum before Save enables", a
 });
 
 test("import → pending rows land tan; income imports feed RTA on approve", async ({ page }) => {
-  const rta = () => page.locator("aside a", { hasText: /Ready to Assign|Money Assigned|Over-Assigned/ }).locator(".num");
+  const rta = () => page.locator("aside a:visible", { hasText: /Ready to Assign|Money Assigned|Over-Assigned/ }).locator(".num");
   await page.goto("/accounts?account=all&category=all");
   const rtaBefore = await rta().textContent();
 
@@ -135,8 +140,11 @@ test("import → pending rows land tan; income imports feed RTA on approve", asy
 });
 
 test("a transfer to the credit card reduces card debt without touching Ready to Assign", async ({ page }) => {
+  const parse = (s: string | null) => Math.round(parseFloat(s!.replace(/[^0-9.-]/g, "")) * 100);
+  const cardBalance = page.locator("aside a:visible", { hasText: "Visa Credit Card" }).locator(".num");
   await page.goto("/budget");
   const rtaBefore = await bannerRta(page).textContent();
+  const cardBefore = await cardBalance.textContent();
 
   await page.goto("/accounts?account=all&category=all");
   await page.getByRole("button", { name: "Add transaction" }).click();
@@ -144,6 +152,13 @@ test("a transfer to the credit card reduces card debt without touching Ready to 
   await page.getByLabel("Amount").fill("100.00");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByText("Transfer to Visa Credit Card").first()).toBeVisible();
+
+  // The card actually received the money: its (negative) balance rises by exactly $100, and the
+  // counterpart leg renders as an INBOUND transfer — a wrong-signed leg would read "Transfer to
+  // Everyday Checking" and leave the balance unchanged. (This is the assertion that was missing:
+  // RTA invariance alone also holds when the card leg is broken.)
+  await expect.poll(async () => parse(await cardBalance.textContent())).toBe(parse(cardBefore) + 10000);
+  await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
 
   await page.goto("/budget");
   await expect(bannerRta(page)).toHaveText(rtaBefore!); // transfers are never income/spending
@@ -178,6 +193,9 @@ test("adjust balance: a mismatched bank balance creates a visible adjustment tra
   await expect(modal.getByText(/Off by/)).toBeVisible();
   await modal.getByRole("button", { name: "Adjust balance", exact: true }).click();
   await expect(page.locator(".row-hover", { hasText: "Reconciliation Adjustment" })).toBeVisible({ timeout: 10_000 });
+  // The adjustment must actually land the account ON the entered balance — a zero-amount or
+  // wrong-signed adjustment row would pass a visibility check alone.
+  await expect(page.locator("text=Balance").locator(".num").first()).toHaveText("$99,999.00");
 });
 
 test("double-clicking Add account creates exactly ONE account (in-flight guard)", async ({ page }) => {
@@ -234,11 +252,30 @@ test("the −/+ toggle records a refund, and re-saving it keeps it an inflow", a
   const row = page.locator(".row-hover", { hasText: "E2E Refund" }).first();
   await expect(row).toContainText("$15.00"); // positive — money came back
 
-  // Re-editing and saving unchanged must NOT flip it into spending (the old bug).
+  // Re-editing and saving unchanged must NOT flip it into spending (the old bug). NB: the
+  // negative assertion is the real check — toContainText("$15.00") also matches "-$15.00".
   await row.click();
   await expect(page.getByRole("button", { name: "Direction: money in" })).toBeVisible(); // sign preserved
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".row-hover", { hasText: "E2E Refund" }).first()).toContainText("$15.00");
+  const saved = page.locator(".row-hover", { hasText: "E2E Refund" }).first();
+  await expect(saved).toContainText("$15.00");
+  await expect(saved).not.toContainText("-$15.00");
+});
+
+test("a typed minus sign flips the direction toggle instead of hiding in the amount", async ({ page }) => {
+  // Regression: with the toggle already on "−", a typed "-45.00" used to double-negate into a
+  // +$45 refund that reports counted as income. The editor now strips the sign and forces the
+  // toggle to outflow, so what's displayed is always what saves.
+  await page.goto("/accounts?account=all&category=all");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Payee").fill("E2E Typed Minus");
+  await page.getByLabel("Category").selectOption({ label: "Groceries" });
+  await page.getByLabel("Amount").fill("-45.00");
+  await expect(page.getByLabel("Amount")).toHaveValue("45.00");
+  await expect(page.getByRole("button", { name: "Direction: money out" })).toBeVisible();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const row = page.locator(".row-hover", { hasText: "E2E Typed Minus" }).first();
+  await expect(row).toContainText("-$45.00"); // an outflow, exactly as displayed
 });
 
 test("converting an imported row to a transfer LINKS the other account's matching row (no doubling)", async ({ page }) => {
@@ -256,7 +293,11 @@ test("converting an imported row to a transfer LINKS the other account's matchin
   await modal.locator("select").selectOption({ label: "Visa Credit Card" });
   await modal.locator("textarea").fill("Date,Payee,Amount,Memo\n2026-07-21,PAYMENT RECEIVED THANK YOU,200.00,");
   await modal.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.locator(".row-hover", { hasText: "PAYMENT RECEIVED" })).toBeVisible({ timeout: 15_000 });
+  const cardRow = page.locator(".row-hover", { hasText: "PAYMENT RECEIVED" });
+  await expect(cardRow).toBeVisible({ timeout: 15_000 });
+  // A positive import on a CREDIT account must NOT land as income (the double-count edge):
+  // it stays an uncategorized NORMAL row, never "Ready to Assign".
+  await expect(cardRow).not.toContainText("Ready to Assign");
 
   // Convert the checking row into a transfer to the Visa (importing switched the register to the
   // Visa filter — go back to all accounts first).
@@ -301,4 +342,90 @@ test("editing a transfer updates BOTH legs; saving it as a category is refused",
   // Exactly one pair — editing must not have minted extra legs.
   await expect(page.getByText("Transfer to Visa Credit Card")).toHaveCount(1);
   await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
+});
+
+test("recording a transfer links a matching pending INCOME row instead of creating a duplicate", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+
+  // Import a paycheck-looking inflow into Savings — it lands as pending INCOME…
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  const modal = page.locator(".modal");
+  await modal.locator("select").selectOption({ label: "Savings" });
+  await modal.locator("textarea").fill("Date,Payee,Amount,Memo\n2026-07-20,E-TRANSFER IN,500.00,");
+  await modal.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "E-TRANSFER IN" })).toBeVisible({ timeout: 15_000 });
+
+  // …but it's really the inbound half of a checking → savings transfer. Recording that transfer
+  // must CLAIM the pending row (INCOME candidates match too), not add a second +$500 to savings.
+  await page.goto("/accounts?account=all&category=all");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Date").fill("2026-07-21");
+  await page.getByLabel("Category").selectOption({ label: "Savings" }); // under "Transfer to"
+  await page.getByLabel("Amount").fill("500.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  await expect(page.getByText("Transfer to Savings").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1);
+  await expect(page.locator(".row-hover", { hasText: "E-TRANSFER IN" })).toHaveCount(0); // converted, not duplicated
+  await expect(page.getByText("pending — needs approval")).toHaveCount(0);
+});
+
+test("recording a transfer never hijacks an APPROVED row with the same amount", async ({ page }) => {
+  await page.goto("/accounts?account=all&category=all");
+
+  // A real, reviewed paycheck in Savings: same amount a transfer is about to move.
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Date").fill("2026-07-21");
+  await page.getByLabel("Payee").fill("E2E Salary");
+  await page.getByLabel("Account").selectOption({ label: "Savings" });
+  await page.getByLabel("Category").selectOption({ label: "Inflow: Ready to Assign" });
+  await page.getByLabel("Amount").fill("300.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.locator(".row-hover", { hasText: "E2E Salary" })).toBeVisible();
+
+  // Record a checking → savings transfer for the same $300 in the same week. Matching is
+  // pending-only: the approved paycheck must survive untouched and a fresh leg gets created.
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Date").fill("2026-07-22");
+  await page.getByLabel("Category").selectOption({ label: "Savings" });
+  await page.getByLabel("Amount").fill("300.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  await expect(page.getByText("Transfer from Everyday Checking")).toHaveCount(1, { timeout: 10_000 });
+  const salary = page.locator(".row-hover", { hasText: "E2E Salary" });
+  await expect(salary).toHaveCount(1); // still there —
+  await expect(salary).toContainText("Ready to Assign"); // — and still income, not a transfer leg
+});
+
+test("deleting an account turns its transfer legs in OTHER accounts into plain rows (balances survive)", async ({ page }) => {
+  const parse = (s: string | null) => Math.round(parseFloat(s!.replace(/[^0-9.-]/g, "")) * 100);
+  const checkingBalance = page.locator("aside a:visible", { hasText: "Everyday Checking" }).locator(".num");
+  await page.goto("/accounts?account=all&category=all");
+
+  await page.getByRole("button", { name: "Add account" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByLabel("Account name").fill("Doomed");
+  await modal.getByLabel("Current balance").fill("0");
+  await modal.getByRole("button", { name: "Add account" }).click();
+  await expect(page.locator("aside").getByText("Doomed")).toHaveCount(1, { timeout: 10_000 });
+
+  // Move real money into it from checking.
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByLabel("Category").selectOption({ label: "Doomed" });
+  await page.getByLabel("Amount").fill("50.00");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Transfer to Doomed").first()).toBeVisible();
+  const checkingAfterTransfer = parse(await checkingBalance.textContent());
+
+  // Delete the account. The checking leg is REAL history (that $50 genuinely left checking):
+  // it must survive as an ordinary row, not vanish and quietly shift checking's balance.
+  const row = page.locator("aside div", { hasText: "Doomed" }).last();
+  await row.hover();
+  await page.getByLabel("Rename or delete Doomed").click();
+  await modal.getByRole("button", { name: /Delete account/ }).click();
+  await modal.getByRole("button", { name: "Confirm delete" }).click();
+  await expect(page.locator("aside").getByText("Doomed")).toHaveCount(0, { timeout: 10_000 });
+
+  await expect(page.locator(".row-hover", { hasText: "Transfer to Doomed (account deleted)" })).toBeVisible();
+  expect(parse(await checkingBalance.textContent())).toBe(checkingAfterTransfer);
 });

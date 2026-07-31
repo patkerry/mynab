@@ -109,10 +109,16 @@ async function resolveSplitValidation(
 // When a row becomes one leg of a transfer, the OTHER leg often already exists — both sides of a
 // real bank transfer arrive via import (checking −$X, card +$X). Creating a fresh counterpart in
 // that case DOUBLES the movement on the receiving account (a real user hit exactly this). So:
-// look for an existing, unlinked row in the counterpart account with the exact opposite amount
-// within a few days (imports of the same transfer can post on different dates; pending INCOME is
-// a candidate too — a paycheck-looking inbound row is often really a transfer), and CONVERT it
-// into the leg instead of creating one. Only creates a new row when nothing matches.
+// look for an existing, unlinked, PENDING row in the counterpart account with the exact opposite
+// amount within a few days (imports of the same transfer can post on different dates; pending
+// INCOME is a candidate too — a paycheck-looking inbound row is often really a transfer), and
+// CONVERT it into the leg instead of creating one. Only creates a new row when nothing matches.
+//
+// Pending-only is a hard rule, not a preference: conversion is destructive (payee wiped, category
+// and split lines dropped) and has no undo, so an APPROVED row — a real reviewed paycheck or a
+// categorized purchase that happens to share the amount — must never be silently claimed. The
+// cost is that a transfer whose both halves were already approved as ordinary rows won't auto-link
+// (the user deletes the duplicate by hand); that beats rewriting reviewed history.
 async function matchOrCreateCounterpart(
   tx: Prisma.TransactionClient,
   args: { budgetId: string; accountId: string; counterpartAccountId: string; date: string; amountCents: number; memo: string; transferId: string }
@@ -131,24 +137,29 @@ async function matchOrCreateCounterpart(
       accountId,
       deletedAt: null,
       transferId: null,
+      pending: true,
       kind: { in: ["NORMAL", "INCOME"] },
       amountCents,
       date: { gte: shift(-WINDOW_DAYS), lte: shift(WINDOW_DAYS) },
     },
     orderBy: { date: "asc" },
   });
-  // Closest date wins; pending (imported, unreviewed) beats approved on a tie — that's the
-  // typical "other half of the import" case.
+  // Closest date wins.
   const dayDiff = (a: string) => Math.abs(new Date(a + "T00:00:00").getTime() - d.getTime());
-  candidates.sort((a, b) => dayDiff(a.date) - dayDiff(b.date) || Number(b.pending) - Number(a.pending));
-  const match = candidates[0];
-  if (match) {
-    await tx.transactionSplit.deleteMany({ where: { transactionId: match.id } });
-    await tx.transaction.update({
-      where: { id: match.id },
+  candidates.sort((a, b) => dayDiff(a.date) - dayDiff(b.date));
+  for (const match of candidates) {
+    // Guarded claim: on Postgres (read committed) a concurrent conversion can have linked this
+    // candidate between our findMany and here — a plain update would overwrite its transferId and
+    // strand that transfer with one leg. updateMany re-checks `transferId: null` atomically; a
+    // count of 0 means we lost the race, so try the next candidate instead.
+    const claimed = await tx.transaction.updateMany({
+      where: { id: match.id, transferId: null },
       data: { kind: "TRANSFER", categoryId: null, payee: "", pending: false, cleared: true, transferId, counterpartAccountId },
     });
-    return;
+    if (claimed.count === 1) {
+      await tx.transactionSplit.deleteMany({ where: { transactionId: match.id } });
+      return;
+    }
   }
   await tx.transaction.create({
     data: { budgetId, accountId, date, payee: "", kind: "TRANSFER", categoryId: null, amountCents, cleared: true, memo, pending: false, transferId, counterpartAccountId },
@@ -325,7 +336,10 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
 
   // The edited row and its new account must both belong to the active budget.
   const [owned, acct] = await Promise.all([
-    prisma.transaction.findFirst({ where: { id, budgetId }, select: { id: true, pending: true, categoryId: true, transferId: true } }),
+    prisma.transaction.findFirst({
+      where: { id, budgetId },
+      select: { id: true, pending: true, categoryId: true, transferId: true, kind: true, _count: { select: { splits: true } } },
+    }),
     prisma.account.findFirst({ where: { id: draft.accountId, budgetId }, select: { id: true, type: true } }),
   ]);
   if (!owned || !acct) return false;
@@ -351,6 +365,13 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
       // −/+ direction from this leg's point of view), and destination (re-pointing the other leg
       // to a different account). No matching here; the pair already exists.
       const existingTransferId = owned.transferId;
+      // A transfer is exactly two legs. If some out-of-band edit left this pair with zero or
+      // several counterparts, a blind updateMany would rewrite the wrong number of rows — refuse
+      // instead of guessing.
+      const counterpartCount = await prisma.transaction.count({
+        where: { budgetId, transferId: existingTransferId, id: { not: id }, deletedAt: null },
+      });
+      if (counterpartCount !== 1) return false;
       await prisma.$transaction(async (tx) => {
         await tx.transaction.update({
           where: { id },
@@ -363,7 +384,7 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
           },
         });
         await tx.transaction.updateMany({
-          where: { budgetId, transferId: existingTransferId, id: { not: id } },
+          where: { budgetId, transferId: existingTransferId, id: { not: id }, deletedAt: null },
           data: {
             date: draft.date,
             accountId: toId,
@@ -470,8 +491,13 @@ export async function updateTransaction(id: string, draft: TxnDraft): Promise<bo
     // legitimately uncategorized system rows, and without this they were permanently uneditable
     // (a real user couldn't fix a starting balance entered with the wrong sign). A categorized
     // row still can't be stripped of its category, and pending rows still require one to approve.
+    // The exception must NOT cover split parents (categoryId null but lines present — saving one
+    // uncategorized would silently delete its allocations below; the UI never offers this, so
+    // only a crafted call could hit it). INCOME stays covered: positive starting balances and
+    // reconciliation adjustments are INCOME rows, and fixing a wrong-sign one lands here.
     if (d.categoryId === null) {
-      const wasUncategorizedAndApproved = owned.categoryId === null && !owned.pending;
+      const wasUncategorizedAndApproved =
+        owned.categoryId === null && !owned.pending && owned._count.splits === 0 && (owned.kind === "NORMAL" || owned.kind === "INCOME");
       if (!wasUncategorizedAndApproved) return false;
     }
     const categoryId = d.categoryId;
@@ -509,8 +535,15 @@ export async function approvePending(ids: string[]): Promise<{ approved: number 
   if (ids.length === 0) return { approved: 0 };
   const fetched = await prisma.transaction.findMany({
     // Approvable = has a direct category, OR split lines (categorized several times over), OR is
-    // imported INCOME (needs no category — approving feeds Ready to Assign).
-    where: { id: { in: ids }, budgetId, pending: true, OR: [{ categoryId: { not: null } }, { splits: { some: {} } }, { kind: "INCOME" }] },
+    // imported INCOME (needs no category — approving feeds Ready to Assign). INCOME on a credit
+    // card is refused here too: imports never create it and add/update block it, but a legacy row
+    // one-click-approved into the budget would hit the documented income-on-card double-count.
+    where: {
+      id: { in: ids },
+      budgetId,
+      pending: true,
+      OR: [{ categoryId: { not: null } }, { splits: { some: {} } }, { kind: "INCOME", account: { type: { not: "CREDIT" } } }],
+    },
     select: { id: true, accountId: true, categoryId: true, date: true, amountCents: true, splits: { select: { categoryId: true, amountCents: true } } },
   });
   // Never approve an incoherent split: if its lines don't sum to the parent amount, approving
@@ -695,28 +728,58 @@ export type DeleteAccountResult = { ok: true } | { ok: false; reason: string };
 // Deletes an account AND its entire history. Exists mostly for the duplicate-account case (a slow
 // server + repeated Add clicks used to create dupes) — but it works on any account, so it hard-
 // deletes with care for every FK the account touches:
-//   - its transactions go (splits cascade with them); this frees their externalIds, which is
+//   - its own transactions go (splits cascade with them); this frees their externalIds, which is
 //     correct here — re-import dedup is scoped per account, and the account is ceasing to exist
-//   - transfer legs pair via transferId across accounts: the counterpart leg in the OTHER account
-//     is deleted too, so no orphaned half-transfers survive
+//   - transfer legs pair via transferId across accounts: the counterpart leg lives in an account
+//     that SURVIVES, so it is NOT deleted — the money genuinely moved there, deleting it would
+//     corrupt that account's balance and free its externalId for silent re-import resurrection.
+//     It becomes an ordinary uncategorized row instead (editable afterward — same shape as a
+//     starting balance), with a payee explaining where it came from.
 //   - a credit card's linked payment category dies with the account (schema cascade), but its
 //     BudgetEntry rows are Restrict — they're removed first, which also returns any money assigned
-//     to the card back to Ready to Assign
+//     to the card back to Ready to Assign. If some out-of-band write tagged transactions or split
+//     lines with the payment category directly, deletion is refused with a reason instead of
+//     surfacing a raw FK error (same pre-check deleteCategory does).
 //   - reconciliation history cascades with the account
 export async function deleteAccount(id: string): Promise<DeleteAccountResult> {
   const { budgetId } = await requireBudget("manage");
-  const account = await prisma.account.findFirst({ where: { id, budgetId }, select: { id: true } });
+  const account = await prisma.account.findFirst({ where: { id, budgetId }, select: { id: true, name: true } });
   if (!account) return { ok: false, reason: "Account not found." };
+
+  const payCat = await prisma.category.findFirst({ where: { budgetId, linkedAccountId: id }, select: { id: true } });
+  if (payCat) {
+    const [txnRefs, splitRefs] = await Promise.all([
+      prisma.transaction.count({ where: { budgetId, categoryId: payCat.id, accountId: { not: id } } }),
+      prisma.transactionSplit.count({ where: { budgetId, categoryId: payCat.id, transaction: { accountId: { not: id } } } }),
+    ]);
+    const refs = txnRefs + splitRefs;
+    if (refs > 0) {
+      return {
+        ok: false,
+        reason: `This card's payment category is still used by ${refs} transaction${refs === 1 ? "" : "s"} in other accounts — recategorize those first.`,
+      };
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     const legs = await tx.transaction.findMany({ where: { budgetId, accountId: id, transferId: { not: null } }, select: { transferId: true } });
     const transferIds = [...new Set(legs.map((t) => t.transferId).filter((x): x is string => x !== null))];
     if (transferIds.length > 0) {
-      await tx.transaction.deleteMany({ where: { budgetId, transferId: { in: transferIds } } });
+      // Counterpart legs in surviving accounts become plain uncategorized rows. Two passes only
+      // to keep the payee direction-aware (updateMany can't compute per-row text).
+      const orphanWhere = { budgetId, transferId: { in: transferIds }, accountId: { not: id } };
+      const orphanData = { kind: "NORMAL" as const, transferId: null, counterpartAccountId: null, categoryId: null };
+      await tx.transaction.updateMany({
+        where: { ...orphanWhere, amountCents: { lt: 0 } },
+        data: { ...orphanData, payee: `Transfer to ${account.name} (account deleted)` },
+      });
+      await tx.transaction.updateMany({
+        where: { ...orphanWhere, amountCents: { gte: 0 } },
+        data: { ...orphanData, payee: `Transfer from ${account.name} (account deleted)` },
+      });
     }
     await tx.transaction.deleteMany({ where: { budgetId, accountId: id } });
 
-    const payCat = await tx.category.findFirst({ where: { budgetId, linkedAccountId: id }, select: { id: true } });
     if (payCat) {
       await tx.budgetEntry.deleteMany({ where: { budgetId, categoryId: payCat.id } });
       await tx.category.delete({ where: { id: payCat.id } });

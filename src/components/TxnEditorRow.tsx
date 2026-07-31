@@ -250,7 +250,18 @@ export function TxnEditorRow({
           <input
             aria-label="Amount"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              // A typed minus sign means "money out": flip the toggle and drop the sign from the
+              // field, so the −/+ button is always the single visible sign authority
+              // (interpretDraft ignores a signed amount for the same reason — no double-negation).
+              const raw = e.target.value;
+              if (raw.includes("-")) {
+                if (!isIncome) setDirection("outflow");
+                setAmount(raw.replace(/-/g, ""));
+              } else {
+                setAmount(raw);
+              }
+            }}
             placeholder="0.00"
             className={`num ${styles.input} ${styles.amount}`}
             style={{ color: isIncome || direction === "inflow" ? "var(--posInk)" : "var(--ink)" }}

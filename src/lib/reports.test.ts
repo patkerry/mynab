@@ -48,6 +48,18 @@ describe("summary", () => {
   it("savings rate is 0 when there is no income", () => {
     expect(summary([txn({ id: "t", date: "2026-07-01", amountCents: -5000, categoryId: "c1" })], ["2026-07"]).savingsRate).toBe(0);
   });
+  it("pending rows count as neither income nor spending — same contract as the budget engine", () => {
+    // Imports land inflows as pending INCOME; until approved they must not inflate the income KPI
+    // (the budget's RTA doesn't move until approval — the two screens must agree).
+    const txns = [
+      txn({ id: "t1", date: "2026-07-01", amountCents: 100000, kind: "INCOME", categoryId: null, pending: true }),
+      txn({ id: "t2", date: "2026-07-05", amountCents: -30000, categoryId: "c1", pending: true }),
+      txn({ id: "t3", date: "2026-07-06", amountCents: -2000, categoryId: "c1" }),
+    ];
+    const s = summary(txns, ["2026-07"]);
+    expect(s.incomeCents).toBe(0);
+    expect(s.spendingCents).toBe(2000);
+  });
 });
 
 describe("spendByCategory", () => {

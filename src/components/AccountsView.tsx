@@ -57,10 +57,13 @@ export function AccountsView({
 
   // A pending imported row is bulk-approvable once it has a category (accepting the auto-guess),
   // or split lines that sum exactly to the row's total, or when it's imported INCOME (which needs
-  // no category — approving it feeds Ready to Assign). approvePending mirrors all three rules.
+  // no category — approving it feeds Ready to Assign). INCOME on a credit card is never
+  // approvable (the documented income-on-card double-count — imports don't create it, but a
+  // legacy row must not get a one-click Approve). approvePending mirrors all these rules.
+  const isCreditAccount = (accountId: string) => accounts.find((a) => a.id === accountId)?.type === "CREDIT";
   const approvable = (t: TransactionWithSplits) =>
     t.pending &&
-    (t.kind === "INCOME" ||
+    ((t.kind === "INCOME" && !isCreditAccount(t.accountId)) ||
       (t.kind === "NORMAL" && (t.categoryId !== null || (t.splits.length > 0 && splitsSumToParent(t.amountCents, t.splits)))));
   const approvableIds = transactions.filter(approvable).map((t) => t.id);
   const toggleSel = (id: string) =>
@@ -103,7 +106,13 @@ export function AccountsView({
     categoryId === null ? "Ready to Assign" : categories.find((c) => c.id === categoryId)?.name || "—";
   const catName = (t: TransactionWithSplits) => {
     if (t.splits.length > 0) return `Split (${t.splits.length})`;
-    return t.kind === "INCOME" ? "Ready to Assign" : t.categoryId === null ? "—" : categories.find((c) => c.id === t.categoryId)?.name || "—";
+    if (t.kind === "INCOME") {
+      // Off-budget (tracking) accounts feed nothing into the budget — labeling their inflows
+      // "Ready to Assign" would promise money that never arrives there.
+      const onBudget = accounts.find((a) => a.id === t.accountId)?.onBudget ?? true;
+      return onBudget ? "Ready to Assign" : "Inflow";
+    }
+    return t.categoryId === null ? "—" : categories.find((c) => c.id === t.categoryId)?.name || "—";
   };
   const acctName = (id: string) => accounts.find((a) => a.id === id)?.name || "?";
 
